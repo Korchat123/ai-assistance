@@ -1,7 +1,7 @@
 import { ClientEventSchema, type ClientEvent } from "@live2d-agent/protocol";
 import type { RawData, WebSocket } from "ws";
 
-import { streamFakeReply } from "./fake-agent.js";
+import type { ConversationEvent } from "./conversation-manager.js";
 import type { SessionState, SessionStore } from "./session-store.js";
 
 const HEARTBEAT_CHECK_MS = 15_000;
@@ -176,6 +176,10 @@ function handleEvent(session: SessionState, event: ClientEvent): void {
       }
       return;
 
+    case "approval.resolve":
+      resolveApproval(session, event);
+      return;
+
     case "user.text":
       startTextTurn(session, event);
   }
@@ -232,8 +236,6 @@ async function runTextTurn(
 ): Promise<void> {
   const controller = new AbortController();
   session.activeTurn = { turnId, commandId, controller };
-  let completedText = "";
-
   session.emit({
     type: "turn.started",
     turnId,
@@ -246,36 +248,179 @@ async function runTextTurn(
   });
 
   try {
-    for await (const chunk of streamFakeReply(userText, controller.signal)) {
-      completedText += chunk.delta;
-      session.emit({
-        type: "assistant.text.delta",
-        turnId,
-        payload: chunk,
-      });
+    const result = await session.conversation.startTurn(
+      userText,
+      controller.signal,
+      (event) => emitConversationEvent(session, turnId, event),
+    );
+    if (result.status === "waiting_approval") {
+      return;
     }
-
+    completeTurn(session, turnId, controller.signal.aborted ? "cancelled" : "completed");
+  } catch (error) {
     const cancelled = controller.signal.aborted;
     if (!cancelled) {
       session.emit({
-        type: "assistant.text.completed",
+        type: "server.error",
         turnId,
-        payload: { text: completedText.trim() },
+        payload: {
+          code: "internal_error",
+          message: error instanceof Error ? error.message : "Agent turn failed.",
+          retryable: true,
+        },
       });
     }
-    session.emit({
-      type: "turn.completed",
-      turnId,
-      payload: { reason: cancelled ? "cancelled" : "completed" },
-    });
-    session.emit({
-      type: "agent.state.changed",
-      turnId,
-      payload: { state: cancelled ? "interrupted" : "idle" },
-    });
+    completeTurn(session, turnId, cancelled ? "cancelled" : "failed");
   } finally {
-    if (session.activeTurn?.turnId === turnId) {
+    if (
+      session.activeTurn?.turnId === turnId &&
+      !session.conversationHasPendingApproval
+    ) {
       session.activeTurn = undefined;
     }
   }
+}
+
+function resolveApproval(
+  session: SessionState,
+  event: Extract<ClientEvent, { type: "approval.resolve" }>,
+): void {
+  const active = session.activeTurn;
+  if (active === undefined) {
+    return;
+  }
+  void session.conversation
+    .resolveApproval(event.payload.approvalId, event.payload.decision)
+    .then((result) => {
+      session.conversationHasPendingApproval = false;
+      if (result === "not_found") {
+        session.emit({
+          type: "server.error",
+          turnId: active.turnId,
+          payload: {
+            code: "not_found",
+            message: "The approval request is no longer pending.",
+            retryable: false,
+          },
+        });
+      }
+      completeTurn(
+        session,
+        active.turnId,
+        result === "completed" ? "completed" : "cancelled",
+      );
+      session.activeTurn = undefined;
+    })
+    .catch((error: unknown) => {
+      session.conversationHasPendingApproval = false;
+      session.emit({
+        type: "server.error",
+        turnId: active.turnId,
+        payload: {
+          code: "internal_error",
+          message: error instanceof Error ? error.message : "Tool execution failed.",
+          retryable: true,
+        },
+      });
+      completeTurn(session, active.turnId, "failed");
+      session.activeTurn = undefined;
+    });
+}
+
+function emitConversationEvent(
+  session: SessionState,
+  turnId: string,
+  event: ConversationEvent,
+): void {
+  switch (event.type) {
+    case "text.delta":
+      session.emit({
+        type: "assistant.text.delta",
+        turnId,
+        payload: { delta: event.delta },
+      });
+      return;
+    case "text.completed":
+      session.emit({
+        type: "assistant.text.completed",
+        turnId,
+        payload: { text: event.turn.displayText },
+      });
+      session.emit({
+        type: "avatar.cue",
+        turnId,
+        payload: {
+          ...event.turn.affect,
+          ...(event.turn.gesture === undefined ? {} : { gesture: event.turn.gesture }),
+        },
+      });
+      return;
+    case "approval.required":
+      session.conversationHasPendingApproval = true;
+      session.emit({
+        type: "approval.required",
+        turnId,
+        payload: {
+          approvalId: event.approvalId,
+          toolCallId: event.call.toolCallId,
+          toolName: event.call.toolName,
+          riskLevel: 1,
+          summary: event.call.summary,
+          argumentsHash: event.call.argumentsHash,
+        },
+      });
+      return;
+    case "tool.started":
+      session.emit({
+        type: "agent.state.changed",
+        turnId,
+        payload: { state: "executing_tool" },
+      });
+      session.emit({
+        type: "tool.started",
+        turnId,
+        payload: {
+          toolCallId: event.call.toolCallId,
+          toolName: event.call.toolName,
+        },
+      });
+      return;
+    case "tool.completed":
+      session.emit({
+        type: "tool.completed",
+        turnId,
+        payload: {
+          toolCallId: event.call.toolCallId,
+          toolName: event.call.toolName,
+          output: event.output,
+        },
+      });
+      return;
+    case "tool.failed":
+      session.emit({
+        type: "tool.failed",
+        turnId,
+        payload: {
+          toolCallId: event.call.toolCallId,
+          toolName: event.call.toolName,
+          code: event.code,
+          message: event.message,
+        },
+      });
+  }
+}
+
+function completeTurn(
+  session: SessionState,
+  turnId: string,
+  reason: "completed" | "cancelled" | "failed",
+): void {
+  session.emit({ type: "turn.completed", turnId, payload: { reason } });
+  session.emit({
+    type: "agent.state.changed",
+    turnId,
+    payload: {
+      state: reason === "completed" ? "idle" : reason === "cancelled" ? "interrupted" : "error",
+    },
+  });
 }

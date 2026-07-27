@@ -34,7 +34,7 @@ The product will support:
 | Area | Choice |
 | --- | --- |
 | Language | TypeScript |
-| Workspace | pnpm monorepo |
+| Workspace |  |
 | Web | React, Vite, Tailwind CSS |
 | Avatar | PixiJS 7 plus a pinned compatible Live2D adapter |
 | Voice | OpenAI Realtime API over WebRTC |

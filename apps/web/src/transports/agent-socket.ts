@@ -134,6 +134,20 @@ export class AgentSocket extends EventTarget {
     });
   }
 
+  public resolveApproval(
+    approvalId: string,
+    decision: "approved" | "denied",
+  ): void {
+    this.sendWhenReady({
+      type: "approval.resolve",
+      payload: {
+        commandId: crypto.randomUUID(),
+        approvalId,
+        decision,
+      },
+    });
+  }
+
   public disconnect(): void {
     this.intentionallyClosed = true;
     this.ready = false;

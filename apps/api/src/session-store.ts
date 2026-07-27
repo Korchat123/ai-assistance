@@ -5,6 +5,9 @@ import {
 } from "@live2d-agent/protocol";
 import type { WebSocket } from "ws";
 
+import { ConversationManager } from "./conversation-manager.js";
+import { createConfiguredProvider } from "./providers.js";
+
 type ServerEventInput = ServerEvent extends infer TEvent
   ? TEvent extends ServerEvent
     ? Omit<
@@ -31,7 +34,11 @@ export class SessionState {
   public activeTurn:
     | { turnId: string; commandId: string; controller: AbortController }
     | undefined;
+  public conversationHasPendingApproval = false;
   public lastAcknowledgedSequence = -1;
+  public readonly conversation = new ConversationManager(
+    createConfiguredProvider(),
+  );
   private nextSequence = 0;
 
   public constructor(

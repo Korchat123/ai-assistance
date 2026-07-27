@@ -13,6 +13,8 @@ type Message = {
   text: string;
 };
 
+type Approval = Extract<ServerEvent, { type: "approval.required" }>;
+
 export function App() {
   const socket = useMemo(
     () => new AgentSocket(import.meta.env.VITE_AGENT_WS_URL ?? "ws://127.0.0.1:8000/ws"),
@@ -23,6 +25,7 @@ export function App() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [error, setError] = useState<string>();
+  const [approvals, setApprovals] = useState<Approval[]>([]);
 
   useEffect(() => {
     const onState = (event: Event) => {
@@ -81,6 +84,15 @@ export function App() {
     if (event.type === "server.error") {
       setError(event.payload.message);
     }
+    if (event.type === "approval.required") {
+      setApprovals((current) =>
+        current.some(
+          (approval) => approval.payload.approvalId === event.payload.approvalId,
+        )
+          ? current
+          : [...current, event],
+      );
+    }
   }
 
   function submit(event: FormEvent<HTMLFormElement>): void {
@@ -129,6 +141,30 @@ export function App() {
             ))
           )}
         </div>
+
+        {approvals.map((approval) => (
+          <section className="approval" key={approval.payload.approvalId}>
+            <p>{approval.payload.summary}</p>
+            <button
+              onClick={() => {
+                socket.resolveApproval(approval.payload.approvalId, "approved");
+                setApprovals((current) => current.filter((item) => item !== approval));
+              }}
+              type="button"
+            >
+              Approve
+            </button>
+            <button
+              onClick={() => {
+                socket.resolveApproval(approval.payload.approvalId, "denied");
+                setApprovals((current) => current.filter((item) => item !== approval));
+              }}
+              type="button"
+            >
+              Deny
+            </button>
+          </section>
+        ))}
 
         <form onSubmit={submit}>
           <input

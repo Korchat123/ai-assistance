@@ -194,4 +194,57 @@ describe("text WebSocket vertical slice", () => {
     await app.close();
     openApps.splice(openApps.indexOf(app), 1);
   });
+
+  it("pauses a Level 1 tool until the browser approves it", async () => {
+    const { socket } = await createSocket();
+    const send = sender(socket, "ses_approval", "con_approval");
+    const approvalPromise = collectUntil(
+      socket,
+      (event) => event.type === "approval.required",
+    );
+
+    send({ type: "session.start", payload: { clientId: "test" } });
+    send({
+      type: "user.text",
+      turnId: "turn_approval",
+      payload: {
+        commandId: "cmd_set",
+        text: "/set theme blue",
+      },
+    });
+
+    const approvalEvents = await approvalPromise;
+    const approval = approvalEvents.find(
+      (event) => event.type === "approval.required",
+    );
+    expect(approval?.type).toBe("approval.required");
+    expect(
+      approvalEvents.some((event) => event.type === "tool.started"),
+    ).toBe(false);
+
+    const completionPromise = collectUntil(
+      socket,
+      (event) => event.type === "turn.completed",
+    );
+    if (approval?.type !== "approval.required") {
+      throw new Error("Approval event was not received.");
+    }
+    send({
+      type: "approval.resolve",
+      payload: {
+        commandId: "cmd_approve",
+        approvalId: approval.payload.approvalId,
+        decision: "approved",
+      },
+    });
+
+    const completionEvents = await completionPromise;
+    expect(
+      completionEvents.some((event) => event.type === "tool.started"),
+    ).toBe(true);
+    expect(
+      completionEvents.some((event) => event.type === "tool.completed"),
+    ).toBe(true);
+    socket.close();
+  });
 });

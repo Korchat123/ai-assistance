@@ -4,6 +4,7 @@ export const PROTOCOL_LIMITS = {
   idLength: 128,
   textLength: 4_000,
   errorMessageLength: 2_000,
+  toolOutputLength: 8_000,
   durationMs: 30_000,
   replayEvents: 1_000,
 } as const;

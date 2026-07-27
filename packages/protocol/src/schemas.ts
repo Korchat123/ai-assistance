@@ -76,6 +76,17 @@ export const TaskCancelEventSchema = event(
     .strict(),
 );
 
+export const ApprovalResolveEventSchema = event(
+  "approval.resolve",
+  z
+    .object({
+      commandId: id,
+      approvalId: id,
+      decision: z.enum(["approved", "denied"]),
+    })
+    .strict(),
+);
+
 export const ClientAckEventSchema = event(
   "client.ack",
   z
@@ -140,6 +151,51 @@ export const AgentStateChangedEventSchema = event(
     .strict(),
 );
 
+const toolEventPayload = {
+  toolCallId: id,
+  toolName: id,
+};
+
+export const ToolStartedEventSchema = event(
+  "tool.started",
+  z.object(toolEventPayload).strict(),
+);
+
+export const ToolCompletedEventSchema = event(
+  "tool.completed",
+  z
+    .object({
+      ...toolEventPayload,
+      output: z.string().max(PROTOCOL_LIMITS.toolOutputLength),
+    })
+    .strict(),
+);
+
+export const ToolFailedEventSchema = event(
+  "tool.failed",
+  z
+    .object({
+      ...toolEventPayload,
+      code: z.enum(["cancelled", "timed_out", "invalid_input", "execution_error"]),
+      message: z.string().min(1).max(PROTOCOL_LIMITS.errorMessageLength),
+    })
+    .strict(),
+);
+
+export const ApprovalRequiredEventSchema = event(
+  "approval.required",
+  z
+    .object({
+      approvalId: id,
+      toolCallId: id,
+      toolName: id,
+      riskLevel: z.literal(1),
+      summary: z.string().min(1).max(PROTOCOL_LIMITS.errorMessageLength),
+      argumentsHash: id,
+    })
+    .strict(),
+);
+
 export const AvatarCueEventSchema = event(
   "avatar.cue",
   z
@@ -200,6 +256,7 @@ export const ClientEventSchema = z.discriminatedUnion("type", [
   SessionResumeEventSchema,
   UserTextEventSchema,
   TaskCancelEventSchema,
+  ApprovalResolveEventSchema,
   ClientAckEventSchema,
   ClientPingEventSchema,
 ]);
@@ -210,6 +267,10 @@ export const ServerEventSchema = z.discriminatedUnion("type", [
   AssistantTextDeltaEventSchema,
   AssistantTextCompletedEventSchema,
   AgentStateChangedEventSchema,
+  ToolStartedEventSchema,
+  ToolCompletedEventSchema,
+  ToolFailedEventSchema,
+  ApprovalRequiredEventSchema,
   AvatarCueEventSchema,
   TurnCompletedEventSchema,
   ServerErrorEventSchema,

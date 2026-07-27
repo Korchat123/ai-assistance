@@ -127,4 +127,32 @@ describe("protocol event schemas", () => {
     const parsed = ServerEventSchema.parse(JSON.parse(JSON.stringify(value)));
     expect(parsed).toEqual(value);
   });
+
+  it("validates approval resolution and required events", () => {
+    expect(
+      ClientEventSchema.safeParse({
+        ...base,
+        type: "approval.resolve",
+        payload: {
+          commandId: "cmd_approve",
+          approvalId: "approval_1",
+          decision: "approved",
+        },
+      }).success,
+    ).toBe(true);
+    expect(
+      ServerEventSchema.safeParse({
+        ...base,
+        type: "approval.required",
+        payload: {
+          approvalId: "approval_1",
+          toolCallId: "tool_call_1",
+          toolName: "set_context",
+          riskLevel: 1,
+          summary: "Approve a local update?",
+          argumentsHash: "abc123",
+        },
+      }).success,
+    ).toBe(true);
+  });
 });
