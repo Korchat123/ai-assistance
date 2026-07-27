@@ -59,6 +59,7 @@ export const UserTextEventSchema = event(
   "user.text",
   z
     .object({
+      commandId: id,
       text: boundedText,
     })
     .strict(),
@@ -68,6 +69,7 @@ export const TaskCancelEventSchema = event(
   "task.cancel",
   z
     .object({
+      commandId: id,
       targetTurnId: id,
       reason: z.string().max(500).optional(),
     })
@@ -97,13 +99,18 @@ export const SessionReadyEventSchema = event(
   z
     .object({
       resumed: z.boolean(),
+      replayedThroughSequence: sequence.optional(),
     })
     .strict(),
 );
 
 export const TurnStartedEventSchema = event(
   "turn.started",
-  z.object({}).strict(),
+  z
+    .object({
+      commandId: id,
+    })
+    .strict(),
 );
 
 export const AssistantTextDeltaEventSchema = event(
@@ -169,6 +176,8 @@ export const ServerErrorEventSchema = event(
         "not_found",
         "rate_limited",
         "replay_unavailable",
+        "command_conflict",
+        "turn_in_progress",
         "internal_error",
       ]),
       message: z.string().min(1).max(PROTOCOL_LIMITS.errorMessageLength),

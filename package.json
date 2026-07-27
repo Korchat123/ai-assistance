@@ -8,8 +8,10 @@
   },
   "scripts": {
     "build": "corepack pnpm -r build",
+    "dev:api": "corepack pnpm --filter @live2d-agent/api dev",
+    "dev:web": "corepack pnpm --filter @live2d-agent/web dev",
     "typecheck": "corepack pnpm -r typecheck",
-    "test": "corepack pnpm --filter @live2d-agent/protocol test",
+    "test": "corepack pnpm --filter @live2d-agent/protocol build && corepack pnpm -r test",
     "lint": "eslint .",
     "check": "corepack pnpm typecheck && corepack pnpm lint && corepack pnpm test && corepack pnpm build"
   },

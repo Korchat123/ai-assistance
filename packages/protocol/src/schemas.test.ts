@@ -23,7 +23,7 @@ describe("protocol event schemas", () => {
       ...base,
       type: "user.text",
       turnId: "turn_1",
-      payload: { text: "Hello" },
+      payload: { commandId: "cmd_1", text: "Hello" },
     });
 
     expect(parsed.type).toBe("user.text");
@@ -34,7 +34,7 @@ describe("protocol event schemas", () => {
       ...base,
       protocolVersion: "2.0",
       type: "user.text",
-      payload: { text: "Hello" },
+      payload: { commandId: "cmd_1", text: "Hello" },
     });
 
     expect(result.success).toBe(false);
@@ -44,7 +44,7 @@ describe("protocol event schemas", () => {
     const result = UserTextEventSchema.safeParse({
       ...base,
       type: "user.text",
-      payload: { text: "Hello", injected: true },
+      payload: { commandId: "cmd_1", text: "Hello", injected: true },
     });
 
     expect(result.success).toBe(false);
@@ -56,7 +56,7 @@ describe("protocol event schemas", () => {
         ...base,
         sequence: invalidSequence,
         type: "user.text",
-        payload: { text: "Hello" },
+        payload: { commandId: "cmd_1", text: "Hello" },
       });
 
       expect(result.success).toBe(false);
@@ -67,12 +67,15 @@ describe("protocol event schemas", () => {
     const empty = UserTextEventSchema.safeParse({
       ...base,
       type: "user.text",
-      payload: { text: "" },
+      payload: { commandId: "cmd_1", text: "" },
     });
     const oversized = UserTextEventSchema.safeParse({
       ...base,
       type: "user.text",
-      payload: { text: "x".repeat(PROTOCOL_LIMITS.textLength + 1) },
+      payload: {
+        commandId: "cmd_1",
+        text: "x".repeat(PROTOCOL_LIMITS.textLength + 1),
+      },
     });
 
     expect(empty.success).toBe(false);

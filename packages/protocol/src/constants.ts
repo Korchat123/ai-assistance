@@ -2,9 +2,10 @@ export const PROTOCOL_VERSION = "1.0" as const;
 
 export const PROTOCOL_LIMITS = {
   idLength: 128,
-  textLength: 32_000,
+  textLength: 4_000,
   errorMessageLength: 2_000,
   durationMs: 30_000,
+  replayEvents: 1_000,
 } as const;
 
 export const agentStates = [

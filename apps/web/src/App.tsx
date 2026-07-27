@@ -22,6 +22,7 @@ export function App() {
     useState<ConnectionState>("disconnected");
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
+  const [error, setError] = useState<string>();
 
   useEffect(() => {
     const onState = (event: Event) => {
@@ -30,24 +31,31 @@ export function App() {
     const onServerEvent = (event: Event) => {
       consumeServerEvent((event as CustomEvent<ServerEvent>).detail);
     };
+    const onProtocolError = (event: Event) => {
+      setError((event as CustomEvent<string>).detail);
+    };
 
     socket.addEventListener("state", onState);
     socket.addEventListener("server-event", onServerEvent);
+    socket.addEventListener("protocol-error", onProtocolError);
     socket.connect();
 
     return () => {
       socket.removeEventListener("state", onState);
       socket.removeEventListener("server-event", onServerEvent);
+      socket.removeEventListener("protocol-error", onProtocolError);
       socket.disconnect();
     };
   }, [socket]);
 
   function consumeServerEvent(event: ServerEvent): void {
     if (event.type === "turn.started") {
-      setMessages((current) => [
-        ...current,
-        { id: event.turnId ?? event.eventId, role: "assistant", text: "" },
-      ]);
+      setMessages((current) => {
+        const id = event.turnId ?? event.eventId;
+        return current.some((message) => message.id === id)
+          ? current
+          : [...current, { id, role: "assistant", text: "" }];
+      });
     }
 
     if (event.type === "assistant.text.delta") {
@@ -58,6 +66,20 @@ export function App() {
             : message,
         ),
       );
+    }
+
+    if (event.type === "assistant.text.completed") {
+      setMessages((current) =>
+        current.map((message) =>
+          message.id === event.turnId
+            ? { ...message, text: event.payload.text }
+            : message,
+        ),
+      );
+    }
+
+    if (event.type === "server.error") {
+      setError(event.payload.message);
     }
   }
 
@@ -95,13 +117,14 @@ export function App() {
         </header>
 
         <div className="messages" aria-live="polite">
+          {error !== undefined ? <p className="error">{error}</p> : null}
           {messages.length === 0 ? (
             <p className="empty">Send a message to test protocol 1.0 streaming.</p>
           ) : (
             messages.map((message) => (
               <article className={`message ${message.role}`} key={message.id}>
                 <span>{message.role}</span>
-                <p>{message.text || "…"}</p>
+                <p>{message.text || "..."}</p>
               </article>
             ))
           )}
@@ -111,7 +134,7 @@ export function App() {
           <input
             aria-label="Message"
             onChange={(event) => setInput(event.target.value)}
-            placeholder="Ask the assistant…"
+            placeholder="Ask the assistant..."
             value={input}
           />
           <button disabled={connection !== "connected"} type="submit">

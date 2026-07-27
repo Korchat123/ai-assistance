@@ -412,12 +412,12 @@ Exit criteria:
 - [x] Implement one deterministic fake agent provider.
 - [x] Stream text events from API to browser.
 - [x] Implement acknowledgement frames and basic exponential reconnect.
-- [ ] Add replay buffering, resume enforcement, and active heartbeat timers.
+- [x] Add replay buffering, resume enforcement, and active heartbeat timers.
 
 Exit criteria:
 
-- A browser can submit text and receive a streamed fake-agent response.
-- Protocol errors are rejected without crashing the connection.
+- [x] A browser can submit text and receive a streamed fake-agent response.
+- [x] Protocol errors are rejected without crashing the connection.
 
 ### Phase 3 — Agent and tools
 
