@@ -1,0 +1,22 @@
+{
+  "name": "live2d-agentic-assistant",
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "pnpm@10.14.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "corepack pnpm -r build",
+    "typecheck": "corepack pnpm -r typecheck",
+    "test": "corepack pnpm --filter @live2d-agent/protocol test",
+    "lint": "eslint .",
+    "check": "corepack pnpm typecheck && corepack pnpm lint && corepack pnpm test && corepack pnpm build"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "eslint": "10.8.0",
+    "typescript": "5.9.2",
+    "typescript-eslint": "8.65.0"
+  }
+}
