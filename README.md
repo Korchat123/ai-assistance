@@ -18,8 +18,9 @@ The current milestone is an agent-and-tools vertical slice. It includes:
 - Ordered server events, cumulative acknowledgements, bounded replay, command
   deduplication, cancellation, heartbeat enforcement, and reconnect/resume.
 
-Live2D rendering and OpenAI Realtime voice are scheduled for later phases. See
-[AGENTIC.md](./AGENTIC.md) for the roadmap.
+The Live2D renderer and optional OpenAI Realtime voice transport are available.
+Neither requires proprietary assets or API credentials for the default local
+placeholder experience. See [AGENTIC.md](./AGENTIC.md) for the roadmap.
 
 The API uses local Ollama by default, with no model API charge. Copy
 `.env.example` to `.env` and set `OLLAMA_MODEL` to a model shown by
@@ -91,12 +92,41 @@ The text agent and voice transport are independent:
 - `AGENT_PROVIDER=ollama` keeps Gemma 3 as the default assistant.
 - `AGENT_PROVIDER=openai` plus a server-side `OPENAI_API_KEY` allows future
   testing with an OpenAI or Codex API model.
-- OpenAI Realtime voice will be a separate optional transport. It is not
-  enabled until a server-side API key is configured and its ephemeral client
-  secret endpoint can be tested.
+- OpenAI Realtime voice is a separate optional transport and can be used while
+  the text agent remains on Ollama.
+
+To enable Realtime voice, add `OPENAI_API_KEY` to the server `.env`, then set
+the web environment:
+
+```env
+VITE_VOICE_PROVIDER=openai-realtime
+VITE_REALTIME_TOKEN_URL=http://127.0.0.1:8000/realtime/client-secret
+```
+
+Restart both development servers after changing environment variables. Select
+**Start voice** to establish the WebRTC session and allow microphone access.
+The microphone stays live until **End voice** is selected. Speaking while the
+assistant responds triggers automatic barge-in; **Interrupt** also cancels an
+active response explicitly.
+
+The API mints a short-lived browser credential at
+`POST /realtime/client-secret`. The permanent OpenAI key, application tools,
+and approval decisions remain server-side. Realtime receives no privileged
+tool definitions; use the text interface for tool-backed actions.
 
 Never place an OpenAI key in an environment variable whose name starts with
 `VITE_`; Vite variables are included in browser code.
+
+## Live2D avatar
+
+The app uses pinned PixiJS 7 and Cubism 4 adapter versions. It intentionally
+does not include Cubism Core or a model. Without an active avatar manifest, the
+UI keeps the built-in placeholder and all conversation features remain usable.
+
+Follow [docs/live2d-setup.md](./docs/live2d-setup.md) to install a properly
+licensed model and the official Cubism Core file locally. The manifest maps
+semantic emotions and gestures onto model-specific expressions, motions, and
+parameter IDs, so missing capabilities degrade gracefully.
 
 ## Verify
 

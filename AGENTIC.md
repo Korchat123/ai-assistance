@@ -10,6 +10,8 @@ The product will support:
 - Text and low-latency voice conversations.
 - Streaming assistant text and audio.
 - Live2D expressions, gestures, eye focus, and lip synchronization.
+- Local-first agent inference through Ollama, with an optional OpenAI API
+  provider for Codex and other supported models.
 - Typed agent tools with validation, authorization, cancellation, and approval.
 - Long-running tasks executed outside the realtime conversation loop.
 - Durable conversation history, user-controlled memory, and reconnect/resume.
@@ -28,6 +30,11 @@ The product will support:
    without confirmed redistribution rights.
 8. Sub-agents are bounded, receive minimum context and permissions, and never
    approve actions or communicate externally on their own.
+9. Ollama is the default text-agent provider. OpenAI API access is optional,
+   selected explicitly, and never required for the local development path.
+10. Text-agent providers and voice transports are configured independently.
+    Selecting an OpenAI or Codex text model does not implicitly enable OpenAI
+    Realtime voice.
 
 ## 3. Technology stack
 
@@ -38,7 +45,7 @@ The product will support:
 | Web | React, Vite, Tailwind CSS |
 | Avatar | PixiJS 7 plus a pinned compatible Live2D adapter |
 | Voice | OpenAI Realtime API over WebRTC |
-| Agent runtime | OpenAI Agents SDK for TypeScript |
+| Agent runtime | Provider interface with Ollama by default; optional OpenAI Agents SDK for TypeScript |
 | Validation | Zod |
 | API | Node.js 22 and Fastify |
 | App events | WebSocket |
@@ -52,6 +59,27 @@ The Live2D implementation must be hidden behind an adapter boundary. We will
 pin an exact tested PixiJS/Live2D dependency matrix before installing it.
 Cubism Core and licensed model assets will be installed manually and documented
 with placeholders in the repository.
+
+### Agent provider strategy
+
+The application supports interchangeable text-agent providers behind one
+`AgentProvider` interface:
+
+- `AGENT_PROVIDER=ollama` is the default. It runs locally and requires no
+  OpenAI API key.
+- `AGENT_PROVIDER=openai` enables the OpenAI Agents SDK and requires a
+  server-side `OPENAI_API_KEY`.
+- `OPENAI_MODEL` selects the OpenAI API model. Codex models such as
+  `gpt-5-codex` are supported through the Responses API path used by the Agents
+  SDK. Model availability still depends on the configured OpenAI project.
+
+Provider selection must not change the shared `AssistantTurn`, tool-policy, or
+event-protocol contracts. API keys stay on the server and must never use a
+`VITE_` environment-variable prefix.
+
+Voice is a separate choice. Local browser speech may be used with either text
+provider. OpenAI Realtime voice requires its own server-mediated session flow
+and is enabled independently from `AGENT_PROVIDER`.
 
 ## 4. System architecture
 
@@ -421,28 +449,29 @@ Exit criteria:
 
 ### Phase 3 — Agent and tools
 
-- [ ] Integrate the OpenAI Agents SDK behind a provider interface.
-- [ ] Create the conversation manager and structured `AssistantTurn`.
-- [ ] Add a Level 0 read-only example tool.
-- [ ] Add a Level 1 tool with approval pause/resume.
-- [ ] Add tool audit, cancellation, timeout, and redaction tests.
+- [x] Integrate Ollama as the default provider and the OpenAI Agents SDK as an
+  optional provider behind a shared interface.
+- [x] Create the conversation manager and structured `AssistantTurn`.
+- [x] Add a Level 0 read-only example tool.
+- [x] Add a Level 1 tool with approval pause/resume.
+- [x] Add tool audit, cancellation, timeout, and redaction tests.
 
 ### Phase 4 — Realtime voice
 
-- [ ] Create a server endpoint for short-lived Realtime client secrets.
-- [ ] Connect the browser with WebRTC.
-- [ ] Reconcile transcript and application events.
-- [ ] Add interruption and barge-in behavior.
-- [ ] Keep secrets and privileged tools server-side.
+- [x] Create a server endpoint for short-lived Realtime client secrets.
+- [x] Connect the browser with WebRTC.
+- [x] Reconcile transcript and application events.
+- [x] Add interruption and barge-in behavior.
+- [x] Keep secrets and privileged tools server-side.
 
 ### Phase 5 — Live2D avatar
 
-- [ ] Confirm the dependency compatibility matrix and licenses.
-- [ ] Add documented Cubism/model placeholders.
-- [ ] Build `Live2DRenderer` and `AvatarController`.
-- [ ] Add the avatar capability manifest.
-- [ ] Map agent state and avatar cues with graceful fallbacks.
-- [ ] Add correct lip-sync smoothing and update ordering.
+- [x] Confirm the dependency compatibility matrix and licenses.
+- [x] Add documented Cubism/model placeholders.
+- [x] Build `Live2DRenderer` and `AvatarController`.
+- [x] Add the avatar capability manifest.
+- [x] Map agent state and avatar cues with graceful fallbacks.
+- [x] Add correct lip-sync smoothing and update ordering.
 
 ### Phase 6 — Persistence and durable work
 

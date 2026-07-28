@@ -248,3 +248,72 @@ describe("text WebSocket vertical slice", () => {
     socket.close();
   });
 });
+
+describe("Realtime HTTP boundary", () => {
+  it("does not mint a client secret when Realtime is unconfigured", async () => {
+    const app = await buildApp({ realtime: { apiKey: "" } });
+    openApps.push(app);
+    const response = await app.inject({
+      method: "POST",
+      url: "/realtime/client-secret",
+    });
+
+    expect(response.statusCode).toBe(503);
+    expect(response.json()).toEqual({
+      error: "OpenAI Realtime voice is not configured.",
+    });
+  });
+
+  it("returns only the ephemeral value and expiry to an allowed browser", async () => {
+    const fetcher = () =>
+      Promise.resolve(new Response(
+        JSON.stringify({
+          value: "ek_browser",
+          expires_at: 1_800_000_000,
+          session: { id: "session_internal" },
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ));
+    const app = await buildApp({
+      fetcher,
+      realtime: {
+        apiKey: "server-key",
+        webOrigin: "http://web.test",
+      },
+    });
+    openApps.push(app);
+    const response = await app.inject({
+      method: "POST",
+      url: "/realtime/client-secret",
+      headers: { origin: "http://web.test" },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.headers["access-control-allow-origin"]).toBe(
+      "http://web.test",
+    );
+    expect(response.json()).toEqual({
+      value: "ek_browser",
+      expiresAt: 1_800_000_000,
+    });
+    expect(response.body).not.toContain("server-key");
+    expect(response.body).not.toContain("session_internal");
+  });
+
+  it("rejects an unexpected browser origin", async () => {
+    const app = await buildApp({
+      realtime: {
+        apiKey: "server-key",
+        webOrigin: "http://web.test",
+      },
+    });
+    openApps.push(app);
+    const response = await app.inject({
+      method: "POST",
+      url: "/realtime/client-secret",
+      headers: { origin: "http://attacker.test" },
+    });
+
+    expect(response.statusCode).toBe(403);
+  });
+});

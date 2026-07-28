@@ -1,0 +1,24 @@
+{
+  "coreUrl": "/live2d/core/live2dcubismcore.min.js",
+  "modelUrl": "/live2d/models/your-model/your-model.model3.json",
+  "parameters": {
+    "mouthOpen": "ParamMouthOpenY",
+    "eyeX": "ParamEyeBallX",
+    "eyeY": "ParamEyeBallY"
+  },
+  "expressions": {
+    "neutral": "neutral",
+    "happy": "smile",
+    "sad": "sad",
+    "angry": "angry",
+    "surprised": "surprised",
+    "thinking": "thinking"
+  },
+  "motions": {
+    "idle": [{ "group": "Idle", "index": 0 }],
+    "nod": [{ "group": "Nod", "index": 0 }],
+    "wave": [{ "group": "Wave", "index": 0 }],
+    "explain": [{ "group": "Explain", "index": 0 }],
+    "shrug": [{ "group": "Shrug", "index": 0 }]
+  }
+}

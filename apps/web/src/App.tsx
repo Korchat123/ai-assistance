@@ -1,11 +1,20 @@
 import type { ServerEvent } from "@live2d-agent/protocol";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent } from "react";
 
+import { AvatarView } from "./features/avatar/AvatarView.js";
+import {
+  LipSyncSmoother,
+  type AvatarController,
+} from "./features/avatar/avatar-controller.js";
 import {
   LocalVoiceController,
   type LocalVoiceState,
 } from "./features/voice/local-voice.js";
+import {
+  RealtimeVoiceController,
+  type RealtimeVoiceState,
+} from "./features/voice/realtime-voice.js";
 import {
   AgentSocket,
   type ConnectionState,
@@ -18,6 +27,7 @@ type Message = {
 };
 
 type Approval = Extract<ServerEvent, { type: "approval.required" }>;
+type VoiceState = LocalVoiceState | RealtimeVoiceState;
 
 export function App() {
   const voiceProvider = import.meta.env.VITE_VOICE_PROVIDER ?? "local";
@@ -31,11 +41,22 @@ export function App() {
   const [input, setInput] = useState("");
   const [error, setError] = useState<string>();
   const [approvals, setApprovals] = useState<Approval[]>([]);
-  const [voiceState, setVoiceState] = useState<LocalVoiceState>("idle");
+  const [voiceState, setVoiceState] = useState<VoiceState>("idle");
   const [voiceEnabled, setVoiceEnabled] = useState(true);
   const voiceRef = useRef<LocalVoiceController | undefined>(undefined);
+  const realtimeVoiceRef = useRef<RealtimeVoiceController | undefined>(
+    undefined,
+  );
   const voiceEnabledRef = useRef(true);
   const connectionRef = useRef<ConnectionState>("disconnected");
+  const avatarRef = useRef<AvatarController | undefined>(undefined);
+  const lipSyncRef = useRef(new LipSyncSmoother());
+  const setAvatarController = useCallback(
+    (controller: AvatarController | undefined) => {
+      avatarRef.current = controller;
+    },
+    [],
+  );
 
   function sendMessage(text: string): void {
     const normalized = text.trim();
@@ -50,20 +71,54 @@ export function App() {
   }
 
   useEffect(() => {
-    if (voiceProvider === "openai-realtime") {
-      setVoiceState("unsupported");
-      setError(
-        "OpenAI Realtime voice is not enabled until the server has an API key and ephemeral-token endpoint.",
+    let localVoice: LocalVoiceController | undefined;
+    let realtimeVoice: RealtimeVoiceController | undefined;
+    if (voiceProvider === "local") {
+      localVoice = new LocalVoiceController({
+        onState: (state) => {
+          setVoiceState(state);
+          avatarRef.current?.setMouthOpen(state === "speaking" ? 0.35 : 0);
+        },
+        onTranscript: sendMessage,
+        onError: setError,
+      });
+      voiceRef.current = localVoice;
+      if (!localVoice.supported) {
+        setVoiceState("unsupported");
+      }
+    } else {
+      realtimeVoice = new RealtimeVoiceController(
+        import.meta.env.VITE_REALTIME_TOKEN_URL ??
+          "http://127.0.0.1:8000/realtime/client-secret",
+        {
+          onState: setVoiceState,
+          onUserTranscript: (itemId, text) => {
+            upsertRealtimeMessage(`realtime:user:${itemId}`, "user", text);
+          },
+          onAssistantTranscript: (itemId, text) => {
+            upsertRealtimeMessage(
+              `realtime:assistant:${itemId}`,
+              "assistant",
+              text,
+            );
+          },
+          onAudioLevel: (rms, deltaMs) => {
+            if (deltaMs === 0) {
+              lipSyncRef.current.reset();
+              avatarRef.current?.setMouthOpen(0);
+              return;
+            }
+            avatarRef.current?.setMouthOpen(
+              lipSyncRef.current.update(rms, deltaMs),
+            );
+          },
+          onError: setError,
+        },
       );
-    }
-    const voice = new LocalVoiceController({
-      onState: setVoiceState,
-      onTranscript: sendMessage,
-      onError: setError,
-    });
-    voiceRef.current = voice;
-    if (voiceProvider === "local" && !voice.supported) {
-      setVoiceState("unsupported");
+      realtimeVoiceRef.current = realtimeVoice;
+      if (!realtimeVoice.supported) {
+        setVoiceState("unsupported");
+      }
     }
 
     const onState = (event: Event) => {
@@ -88,10 +143,28 @@ export function App() {
       socket.removeEventListener("server-event", onServerEvent);
       socket.removeEventListener("protocol-error", onProtocolError);
       socket.disconnect();
-      voice.dispose();
+      localVoice?.dispose();
+      realtimeVoice?.disconnect(false);
       voiceRef.current = undefined;
+      realtimeVoiceRef.current = undefined;
     };
   }, [socket, voiceProvider]);
+
+  function upsertRealtimeMessage(
+    id: string,
+    role: Message["role"],
+    text: string,
+  ): void {
+    setMessages((current) => {
+      const existing = current.findIndex((message) => message.id === id);
+      if (existing === -1) {
+        return [...current, { id, role, text }];
+      }
+      return current.map((message, index) =>
+        index === existing ? { ...message, text } : message,
+      );
+    });
+  }
 
   function consumeServerEvent(event: ServerEvent): void {
     if (event.type === "turn.started") {
@@ -129,6 +202,27 @@ export function App() {
     if (event.type === "server.error") {
       setError(event.payload.message);
     }
+    if (event.type === "avatar.cue") {
+      void avatarRef.current?.applyCue({
+        emotion: event.payload.emotion,
+        intensity: event.payload.intensity,
+        ...(event.payload.gesture === undefined
+          ? {}
+          : { gesture: event.payload.gesture }),
+        ...(event.payload.durationMs === undefined
+          ? {}
+          : { durationMs: event.payload.durationMs }),
+      });
+    }
+    if (event.type === "agent.state.changed") {
+      const cue =
+        event.payload.state === "thinking"
+          ? { emotion: "thinking" as const, intensity: 0.65, gesture: "explain" as const }
+          : event.payload.state === "speaking"
+            ? { emotion: "happy" as const, intensity: 0.4, gesture: "idle" as const }
+            : { emotion: "neutral" as const, intensity: 0.2, gesture: "idle" as const };
+      void avatarRef.current?.applyCue(cue);
+    }
     if (event.type === "approval.required") {
       setApprovals((current) =>
         current.some(
@@ -153,10 +247,7 @@ export function App() {
   return (
     <main className="shell">
       <section className="avatar-panel" aria-label="Live2D avatar placeholder">
-        <div className="avatar-placeholder">
-          <span>Live2D</span>
-          <small>Renderer arrives in Phase 5</small>
-        </div>
+        <AvatarView onController={setAvatarController} />
       </section>
 
       <section className="chat-panel">
@@ -209,30 +300,52 @@ export function App() {
         <section className="composer">
           <div className="voice-controls">
             <button
-              className={voiceState === "listening" ? "voice-active" : ""}
+              className={
+                voiceState === "listening" || voiceState === "speaking"
+                  ? "voice-active"
+                  : ""
+              }
               disabled={
                 connection !== "connected" ||
                 voiceState === "unsupported" ||
-                voiceProvider !== "local"
+                voiceState === "connecting"
               }
               onClick={() => {
                 setError(undefined);
-                if (voiceState === "listening") {
+                if (voiceProvider === "local" && voiceState === "listening") {
                   voiceRef.current?.stopListening();
-                } else {
+                } else if (voiceProvider === "local") {
                   voiceRef.current?.startListening();
+                } else if (voiceState === "speaking") {
+                  realtimeVoiceRef.current?.interrupt();
+                } else if (realtimeVoiceRef.current?.connected) {
+                  realtimeVoiceRef.current.disconnect();
+                } else {
+                  void realtimeVoiceRef.current?.connect();
                 }
               }}
               type="button"
             >
-              {voiceState === "listening" ? "Stop listening" : "Speak"}
+              {voiceProvider === "local"
+                ? voiceState === "listening"
+                  ? "Stop listening"
+                  : "Speak"
+                : voiceState === "connecting"
+                  ? "Connecting..."
+                  : voiceState === "speaking"
+                    ? "Interrupt"
+                    : voiceState === "listening"
+                      ? "End voice"
+                      : "Start voice"}
             </button>
             <button
               className="secondary"
               onClick={() => {
                 setVoiceEnabled((current) => {
-                  if (current) {
+                  if (voiceProvider === "local" && current) {
                     voiceRef.current?.stopSpeaking();
+                  } else if (voiceProvider === "openai-realtime") {
+                    realtimeVoiceRef.current?.setMuted(current);
                   }
                   voiceEnabledRef.current = !current;
                   return !current;
@@ -240,7 +353,13 @@ export function App() {
               }}
               type="button"
             >
-              {voiceEnabled ? "Voice on" : "Voice off"}
+              {voiceProvider === "local"
+                ? voiceEnabled
+                  ? "Voice on"
+                  : "Voice off"
+                : voiceEnabled
+                  ? "Mic on"
+                  : "Mic off"}
             </button>
             <span className="voice-status">{voiceState.replace("_", " ")}</span>
           </div>

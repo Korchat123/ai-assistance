@@ -9,3 +9,6 @@ coverage/
 Thumbs.db
 apps/web/public/live2d/models/*
 !apps/web/public/live2d/models/README.md
+apps/web/public/live2d/core/*
+!apps/web/public/live2d/core/README.md
+apps/web/public/live2d/avatar-manifest.json
