@@ -153,6 +153,39 @@ form {
   gap: 0.75rem;
 }
 
+.composer {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.voice-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+}
+
+.voice-controls button {
+  padding: 0.55rem 0.8rem;
+  font-size: 0.8rem;
+}
+
+.voice-controls .secondary {
+  border: 1px solid #4b405d;
+  background: #211b2b;
+}
+
+.voice-controls .voice-active {
+  background: #b52c5d;
+  box-shadow: 0 0 0 4px rgb(181 44 93 / 18%);
+}
+
+.voice-status {
+  margin-left: auto;
+  color: #a99db7;
+  font-size: 0.75rem;
+  text-transform: capitalize;
+}
+
 input {
   min-width: 0;
   padding: 0.9rem 1rem;

@@ -36,7 +36,10 @@ describe("Ollama provider", () => {
       expect.objectContaining({ method: "POST" }),
     );
     const request = fetchMock.mock.calls[0]?.[1];
-    const body = JSON.parse(String(request?.body)) as {
+    if (typeof request?.body !== "string") {
+      throw new Error("Expected a JSON request body.");
+    }
+    const body = JSON.parse(request.body) as {
       format: Record<string, unknown>;
     };
     expect(body.format).toMatchObject({
