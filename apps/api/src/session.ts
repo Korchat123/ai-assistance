@@ -26,6 +26,7 @@ function sendDirect(socket: WebSocket, event: object): void {
 export function attachSession(socket: WebSocket, store: SessionStore): void {
   let session: SessionState | undefined;
   let lastSeenAt = Date.now();
+  let messageQueue = Promise.resolve();
 
   const heartbeat = setInterval(() => {
     if (Date.now() - lastSeenAt > STALE_CONNECTION_MS) {
@@ -35,45 +36,51 @@ export function attachSession(socket: WebSocket, store: SessionStore): void {
   heartbeat.unref();
 
   socket.on("message", (raw: RawData) => {
-    lastSeenAt = Date.now();
-    const input = parseJson(raw);
-    const parsed = ClientEventSchema.safeParse(input);
+    messageQueue = messageQueue.then(async () => {
+      lastSeenAt = Date.now();
+      const input = parseJson(raw);
+      const parsed = ClientEventSchema.safeParse(input);
 
-    if (!parsed.success) {
-      if (session !== undefined) {
-        session.emit({
-          type: "server.error",
-          payload: {
+      if (!parsed.success) {
+        if (session !== undefined) {
+          session.emit({
+            type: "server.error",
+            payload: {
+              code: "invalid_event",
+              message: "The client event did not match protocol version 1.0.",
+              retryable: false,
+            },
+          });
+        } else {
+          sendDirect(socket, {
+            type: "connection.error",
             code: "invalid_event",
-            message: "The client event did not match protocol version 1.0.",
-            retryable: false,
-          },
-        });
-      } else {
-        sendDirect(socket, {
-          type: "connection.error",
-          code: "invalid_event",
-          message: "The first frame must be a valid session event.",
-        });
+            message: "The first frame must be a valid session event.",
+          });
+        }
+        return;
       }
-      return;
-    }
 
-    const event = parsed.data;
-    if (session === undefined) {
-      session = initializeSession(socket, store, event);
-      return;
-    }
+      const event = parsed.data;
+      if (session === undefined) {
+        session = await initializeSession(socket, store, event);
+        return;
+      }
 
-    if (
-      event.sessionId !== session.sessionId ||
-      event.conversationId !== session.conversationId
-    ) {
-      socket.close(1008, "Session identity changed");
-      return;
-    }
+      if (
+        event.sessionId !== session.sessionId ||
+        event.conversationId !== session.conversationId
+      ) {
+        socket.close(1008, "Session identity changed");
+        return;
+      }
 
-    handleEvent(session, event);
+      handleEvent(session, event);
+    });
+    void messageQueue.catch((error: unknown) => {
+      console.error("Session message processing failed.", error);
+      socket.close(1011, "Session processing failed");
+    });
   });
 
   socket.on("close", () => {
@@ -90,11 +97,11 @@ function parseJson(raw: RawData): unknown {
   }
 }
 
-function initializeSession(
+async function initializeSession(
   socket: WebSocket,
   store: SessionStore,
   event: ClientEvent,
-): SessionState | undefined {
+): Promise<SessionState | undefined> {
   if (event.type === "session.start") {
     const session = store.create(event.sessionId, event.conversationId);
     session.sockets.add(socket);
@@ -106,7 +113,7 @@ function initializeSession(
   }
 
   if (event.type === "session.resume") {
-    const session = store.get(event.sessionId);
+    const session = await store.load(event.sessionId);
     if (
       session === undefined ||
       session.conversationId !== event.conversationId
@@ -164,10 +171,7 @@ function handleEvent(session: SessionState, event: ClientEvent): void {
       return;
 
     case "client.ack":
-      session.lastAcknowledgedSequence = Math.max(
-        session.lastAcknowledgedSequence,
-        event.payload.acknowledgedSequence,
-      );
+      session.acknowledge(event.payload.acknowledgedSequence);
       return;
 
     case "task.cancel":
@@ -225,6 +229,7 @@ function startTextTurn(
   }
 
   session.commands.set(event.payload.commandId, { fingerprint, turnId });
+  session.recordMessage(turnId, { role: "user", text: event.payload.text });
   void runTextTurn(session, turnId, event.payload.commandId, event.payload.text);
 }
 
@@ -289,6 +294,10 @@ function resolveApproval(
   if (active === undefined) {
     return;
   }
+  session.resolveApprovalRecord(
+    event.payload.approvalId,
+    event.payload.decision,
+  );
   void session.conversation
     .resolveApproval(event.payload.approvalId, event.payload.decision)
     .then((result) => {
@@ -341,6 +350,10 @@ function emitConversationEvent(
       });
       return;
     case "text.completed":
+      session.recordMessage(turnId, {
+        role: "assistant",
+        text: event.turn.displayText,
+      });
       session.emit({
         type: "assistant.text.completed",
         turnId,
@@ -357,6 +370,22 @@ function emitConversationEvent(
       return;
     case "approval.required":
       session.conversationHasPendingApproval = true;
+      session.recordToolCall({
+        toolCallId: event.call.toolCallId,
+        conversationId: session.conversationId,
+        turnId,
+        toolName: event.call.toolName,
+        argumentsHash: event.call.argumentsHash,
+        status: "awaiting_approval",
+      });
+      session.recordApproval({
+        approvalId: event.approvalId,
+        toolCallId: event.call.toolCallId,
+        conversationId: session.conversationId,
+        turnId,
+        argumentsHash: event.call.argumentsHash,
+        status: "pending",
+      });
       session.emit({
         type: "approval.required",
         turnId,
@@ -371,6 +400,14 @@ function emitConversationEvent(
       });
       return;
     case "tool.started":
+      session.recordToolCall({
+        toolCallId: event.call.toolCallId,
+        conversationId: session.conversationId,
+        turnId,
+        toolName: event.call.toolName,
+        argumentsHash: event.call.argumentsHash,
+        status: "running",
+      });
       session.emit({
         type: "agent.state.changed",
         turnId,
@@ -386,6 +423,15 @@ function emitConversationEvent(
       });
       return;
     case "tool.completed":
+      session.recordToolCall({
+        toolCallId: event.call.toolCallId,
+        conversationId: session.conversationId,
+        turnId,
+        toolName: event.call.toolName,
+        argumentsHash: event.call.argumentsHash,
+        status: "succeeded",
+        output: event.output,
+      });
       session.emit({
         type: "tool.completed",
         turnId,
@@ -397,6 +443,15 @@ function emitConversationEvent(
       });
       return;
     case "tool.failed":
+      session.recordToolCall({
+        toolCallId: event.call.toolCallId,
+        conversationId: session.conversationId,
+        turnId,
+        toolName: event.call.toolName,
+        argumentsHash: event.call.argumentsHash,
+        status: event.code,
+        error: event.message,
+      });
       session.emit({
         type: "tool.failed",
         turnId,

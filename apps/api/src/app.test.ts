@@ -11,6 +11,10 @@ import WebSocket from "ws";
 import type { RawData } from "ws";
 
 import { buildApp } from "./app.js";
+import {
+  MemoryPersistence,
+  type Persistence,
+} from "./persistence.js";
 
 type ClientEventInput = ClientEvent extends infer TEvent
   ? TEvent extends ClientEvent
@@ -32,8 +36,8 @@ afterEach(async () => {
   await Promise.all(openApps.splice(0).map(async (app) => app.close()));
 });
 
-async function createSocket() {
-  const app = await buildApp();
+async function createSocket(options: { persistence?: Persistence } = {}) {
+  const app = await buildApp(options);
   openApps.push(app);
   await app.listen({ host: "127.0.0.1", port: 0 });
   const address = app.server.address() as AddressInfo;
@@ -315,5 +319,56 @@ describe("Realtime HTTP boundary", () => {
     });
 
     expect(response.statusCode).toBe(403);
+  });
+});
+
+describe("durable audit projection", () => {
+  it("persists tool and approval lifecycle records", async () => {
+    const persistence = new MemoryPersistence();
+    const { socket } = await createSocket({ persistence });
+    const send = sender(socket, "ses_persist", "con_persist");
+    const approvalPromise = collectUntil(
+      socket,
+      (event) => event.type === "approval.required",
+    );
+    send({ type: "session.start", payload: { clientId: "test" } });
+    send({
+      type: "user.text",
+      turnId: "turn_persist",
+      payload: {
+        commandId: "cmd_persist",
+        text: "/set theme violet",
+      },
+    });
+    const events = await approvalPromise;
+    const approval = events.find(
+      (event) => event.type === "approval.required",
+    );
+    if (approval?.type !== "approval.required") {
+      throw new Error("Expected an approval request.");
+    }
+
+    const completionPromise = collectUntil(
+      socket,
+      (event) => event.type === "turn.completed",
+    );
+    send({
+      type: "approval.resolve",
+      payload: {
+        commandId: "cmd_resolution",
+        approvalId: approval.payload.approvalId,
+        decision: "approved",
+      },
+    });
+    await completionPromise;
+    await new Promise<void>((resolve) => setImmediate(resolve));
+
+    expect(
+      persistence.toolCalls.get(approval.payload.toolCallId)?.status,
+    ).toBe("succeeded");
+    expect(
+      persistence.approvals.get(approval.payload.approvalId)?.status,
+    ).toBe("approved");
+    socket.close();
   });
 });

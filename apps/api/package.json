@@ -6,6 +6,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "dev": "tsx watch src/server.ts",
+    "migrate": "tsx src/migrate.ts",
     "start": "node dist/server.js",
     "test": "vitest run",
     "typecheck": "tsc -p tsconfig.json --noEmit"
@@ -16,11 +17,13 @@
     "@openai/agents": "0.13.5",
     "dotenv": "17.2.3",
     "fastify": "5.10.0",
+    "pg": "8.22.0",
     "ws": "8.18.3",
     "zod": "4.1.12"
   },
   "devDependencies": {
     "@types/node": "24.10.1",
+    "@types/pg": "8.20.0",
     "@types/ws": "8.18.1",
     "tsx": "4.20.6",
     "typescript": "5.9.2",

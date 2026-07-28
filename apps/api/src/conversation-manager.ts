@@ -40,7 +40,10 @@ export class ConversationManager {
   public constructor(
     private readonly provider: AgentProvider,
     public readonly tools = new ToolRuntime(),
-  ) {}
+    initialHistory: readonly ConversationMessage[] = [],
+  ) {
+    this.history.push(...initialHistory);
+  }
 
   public async startTurn(
     userText: string,

@@ -13,6 +13,7 @@
     "typecheck": "corepack pnpm -r typecheck",
     "test": "corepack pnpm --filter @live2d-agent/protocol build && corepack pnpm -r test",
     "lint": "eslint .",
+    "migrate": "corepack pnpm --filter @live2d-agent/api migrate",
     "check": "corepack pnpm typecheck && corepack pnpm lint && corepack pnpm test && corepack pnpm build"
   },
   "devDependencies": {

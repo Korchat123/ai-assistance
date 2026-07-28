@@ -1,12 +1,18 @@
 import websocket from "@fastify/websocket";
 import Fastify from "fastify";
 
+import {
+  createPersistence,
+  type Persistence,
+} from "./persistence.js";
 import { createRealtimeClientSecret } from "./realtime.js";
 import { attachSession } from "./session.js";
 import { SessionStore } from "./session-store.js";
 
 type AppOptions = {
   fetcher?: typeof fetch;
+  persistence?: Persistence;
+  databaseUrl?: string;
   realtime?: {
     apiKey?: string;
     model?: string;
@@ -17,7 +23,9 @@ type AppOptions = {
 
 export async function buildApp(options: AppOptions = {}) {
   const app = Fastify({ logger: false });
-  const sessions = new SessionStore();
+  const persistence =
+    options.persistence ?? createPersistence(options.databaseUrl);
+  const sessions = new SessionStore(persistence);
   const realtime = {
     apiKey: options.realtime?.apiKey ?? process.env.OPENAI_API_KEY,
     model:
@@ -69,8 +77,8 @@ export async function buildApp(options: AppOptions = {}) {
   app.get("/ws", { websocket: true }, (socket) => {
     attachSession(socket, sessions);
   });
-  app.addHook("onClose", () => {
-    sessions.clear();
+  app.addHook("onClose", async () => {
+    await sessions.clear();
   });
 
   return app;

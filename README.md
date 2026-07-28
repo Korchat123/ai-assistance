@@ -27,6 +27,11 @@ The API uses local Ollama by default, with no model API charge. Copy
 `ollama list`. Set `AGENT_PROVIDER=openai` and add `OPENAI_API_KEY` only when
 you intentionally want the separately billed OpenAI API.
 
+Persistence is also local and in-memory by default. To preserve replay,
+tool-call audits, approvals, and artifact references across API restarts, set
+`DATABASE_URL` and run `corepack pnpm migrate`. See
+[docs/persistence.md](./docs/persistence.md).
+
 ## Requirements
 
 - Node.js 22 or newer.

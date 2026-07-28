@@ -24,4 +24,5 @@ of silently clamping or coercing them.
 - Client and server heartbeat timers close stale connections.
 
 The Phase 2 session store is intentionally in memory. Server restarts lose
-session and replay state; durable replay is scheduled for the persistence phase.
+session and replay state. When PostgreSQL is configured, the API hydrates the
+bounded replay window and next sequence after a process restart.

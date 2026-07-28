@@ -475,11 +475,11 @@ Exit criteria:
 
 ### Phase 6 — Persistence and durable work
 
-- [ ] Add PostgreSQL schema and repositories.
-- [ ] Persist conversations, events, tool calls, and approvals.
-- [ ] Add Redis/BullMQ worker only for jobs that require durability.
-- [ ] Add reconnect replay from the last acknowledged sequence.
-- [ ] Add artifact references and retention policies.
+- [x] Add PostgreSQL schema and repositories.
+- [x] Persist conversations, events, tool calls, and approvals.
+- [x] Evaluate Redis/BullMQ and defer it until a durable job exists.
+- [x] Add reconnect replay from the last acknowledged sequence.
+- [x] Add artifact references and retention policies.
 
 ### Phase 7 — Memory
 
