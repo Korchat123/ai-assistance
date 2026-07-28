@@ -50,6 +50,17 @@ sensitivity, and a one-year default expiry. Obvious password, token, API-key,
 passcode, and secret content is rejected. The browser identity is persisted in
 local storage; it provides local prototype isolation, not authentication.
 
+## Bounded code analysis
+
+Send `/analyze <code or technical text>` to opt into one read-only specialist
+pass before the manager answers. The specialist receives only the supplied
+text: it has no tools, filesystem access, approval authority, memory context,
+or ability to delegate again. Input, output, time, concurrency, retries, and
+depth are hard-limited. Ordinary messages keep the faster single-agent path.
+
+See [docs/phase8-evaluation.md](./docs/phase8-evaluation.md) for the baseline,
+limits, comparison method, and current decision not to add more specialists.
+
 ## Requirements
 
 - Node.js 22 or newer.

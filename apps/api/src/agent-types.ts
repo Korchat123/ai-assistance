@@ -29,6 +29,7 @@ export interface ConversationMessage {
 
 export interface AgentContext {
   memories: readonly string[];
+  specialistFindings?: readonly string[];
 }
 
 export interface AgentProvider {

@@ -490,11 +490,11 @@ Exit criteria:
 
 ### Phase 8 — Bounded sub-agents
 
-- [ ] Establish single-agent evaluation baselines.
-- [ ] Add one read-only specialist agent.
-- [ ] Enforce depth, time, token, tool, and concurrency limits.
-- [ ] Compare correctness, latency, and cost with the baseline.
-- [ ] Add further specialists only when measurements justify them.
+- [x] Establish single-agent evaluation baselines.
+- [x] Add one read-only specialist agent.
+- [x] Enforce depth, time, token, tool, and concurrency limits.
+- [x] Compare correctness, latency, and cost with the baseline.
+- [x] Add further specialists only when measurements justify them.
 
 ### Phase 9 — Hardening and deployment
 
@@ -505,8 +505,8 @@ Exit criteria:
 
 ## 15. Immediate next action
 
-Evaluate Phase 7 memory behavior and establish the single-agent baseline needed
-before beginning Phase 8 bounded sub-agent work.
+Run Phase 9 failure-injection and concurrency tests before preparing a
+deployment.
 
 ## 16. Sibling model projects
 

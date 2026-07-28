@@ -8,6 +8,10 @@ import {
   ToolRuntime,
   type ProposedToolCall,
 } from "./tool-runtime.js";
+import {
+  BoundedCodeAnalysisSpecialist,
+  type SpecialistRun,
+} from "./bounded-specialist.js";
 
 export type ConversationEvent =
   | { type: "text.delta"; delta: string }
@@ -42,13 +46,17 @@ interface PendingApproval {
 export class ConversationManager {
   private readonly history: ConversationMessage[] = [];
   private readonly pending = new Map<string, PendingApproval>();
+  public readonly specialistRuns: SpecialistRun[] = [];
+  private readonly specialist: BoundedCodeAnalysisSpecialist;
 
   public constructor(
     private readonly provider: AgentProvider,
     public readonly tools = new ToolRuntime(),
     initialHistory: readonly ConversationMessage[] = [],
+    specialist = new BoundedCodeAnalysisSpecialist(provider),
   ) {
     this.history.push(...initialHistory);
+    this.specialist = specialist;
   }
 
   public async startTurn(
@@ -58,6 +66,17 @@ export class ConversationManager {
     context: AgentContext = { memories: [] },
   ): Promise<TurnHandle> {
     this.history.push({ role: "user", text: userText });
+    const specialistRequest = parseSpecialistRequest(userText);
+    if (specialistRequest !== undefined) {
+      const run = await this.specialist.run(specialistRequest, signal);
+      this.specialistRuns.push(run);
+      if (run.status === "completed" && run.finding !== undefined) {
+        context = {
+          ...context,
+          specialistFindings: [run.finding],
+        };
+      }
+    }
     const invocation = parseExampleTool(userText);
     if (invocation !== undefined) {
       const call = this.tools.propose(invocation.name, invocation.input);
@@ -141,6 +160,15 @@ export class ConversationManager {
     this.history.push({ role: "assistant", text: turn.displayText });
     emit({ type: "text.completed", turn });
   }
+}
+
+function parseSpecialistRequest(text: string): string | undefined {
+  const trimmed = text.trim();
+  if (!trimmed.startsWith("/analyze ")) {
+    return undefined;
+  }
+  const request = trimmed.slice("/analyze ".length).trim();
+  return request === "" ? undefined : request;
 }
 
 function parseExampleTool(

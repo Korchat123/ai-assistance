@@ -49,4 +49,42 @@ describe("conversation manager approvals", () => {
       manager.tools.audit.some((entry) => entry.state === "running"),
     ).toBe(false);
   });
+
+  it("uses a bounded specialist finding only for explicit analysis", async () => {
+    const contexts: unknown[] = [];
+    let invocation = 0;
+    const routedProvider: AgentProvider = {
+      name: "routed-test",
+      createTurn: (_messages, _signal, context) => {
+        contexts.push(context);
+        invocation += 1;
+        return Promise.resolve({
+          displayText:
+            invocation === 1 ? "Specialist evidence." : "Manager synthesis.",
+          speechText: invocation === 1 ? "Evidence." : "Synthesis.",
+          affect: { emotion: "neutral", intensity: 0 },
+        });
+      },
+    };
+    const manager = new ConversationManager(routedProvider);
+    const events: ConversationEvent[] = [];
+
+    await manager.startTurn(
+      "/analyze const value = input.name",
+      new AbortController().signal,
+      (event) => events.push(event),
+    );
+
+    expect(manager.specialistRuns).toHaveLength(1);
+    expect(manager.specialistRuns[0]?.metrics.toolCalls).toBe(0);
+    expect(contexts[0]).toEqual({ memories: [] });
+    expect(contexts[1]).toMatchObject({
+      specialistFindings: ["Specialist evidence."],
+    });
+    expect(
+      events.find((event) => event.type === "text.completed"),
+    ).toMatchObject({
+      turn: { displayText: "Manager synthesis." },
+    });
+  });
 });
