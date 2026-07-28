@@ -6,6 +6,7 @@ import type { SessionState, SessionStore } from "./session-store.js";
 
 const HEARTBEAT_CHECK_MS = 15_000;
 const STALE_CONNECTION_MS = 45_000;
+export const DEFAULT_MAX_QUEUED_MESSAGES = 32;
 
 function decodeRawData(raw: RawData): string {
   if (Array.isArray(raw)) {
@@ -23,10 +24,15 @@ function sendDirect(socket: WebSocket, event: object): void {
   }
 }
 
-export function attachSession(socket: WebSocket, store: SessionStore): void {
+export function attachSession(
+  socket: WebSocket,
+  store: SessionStore,
+  maxQueuedMessages = DEFAULT_MAX_QUEUED_MESSAGES,
+): void {
   let session: SessionState | undefined;
   let lastSeenAt = Date.now();
   let messageQueue = Promise.resolve();
+  let queuedMessages = 0;
 
   const heartbeat = setInterval(() => {
     if (Date.now() - lastSeenAt > STALE_CONNECTION_MS) {
@@ -36,6 +42,11 @@ export function attachSession(socket: WebSocket, store: SessionStore): void {
   heartbeat.unref();
 
   socket.on("message", (raw: RawData) => {
+    if (queuedMessages >= maxQueuedMessages) {
+      socket.close(1013, "Session queue is full");
+      return;
+    }
+    queuedMessages += 1;
     messageQueue = messageQueue.then(async () => {
       lastSeenAt = Date.now();
       const input = parseJson(raw);
@@ -76,6 +87,8 @@ export function attachSession(socket: WebSocket, store: SessionStore): void {
       }
 
       await handleEvent(session, event);
+    }).finally(() => {
+      queuedMessages -= 1;
     });
     void messageQueue.catch((error: unknown) => {
       console.error("Session message processing failed.", error);

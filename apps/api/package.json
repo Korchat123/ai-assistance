@@ -5,7 +5,9 @@
   "type": "module",
   "scripts": {
     "build": "tsc -p tsconfig.json",
+    "canary": "tsx src/canary.ts",
     "dev": "tsx watch src/server.ts",
+    "delete:client-data": "tsx src/delete-client-data.ts",
     "migrate": "tsx src/migrate.ts",
     "start": "node dist/server.js",
     "test": "vitest run",

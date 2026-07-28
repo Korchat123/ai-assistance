@@ -498,15 +498,15 @@ Exit criteria:
 
 ### Phase 9 — Hardening and deployment
 
-- [ ] Run failure-injection and concurrent-session tests.
-- [ ] Add rate limits, queue backpressure, backups, and deletion workflows.
-- [ ] Add prompt/model canary evaluation.
-- [ ] Document deployment, monitoring, license setup, and incident recovery.
+- [x] Run failure-injection and concurrent-session tests.
+- [x] Add rate limits, queue backpressure, backups, and deletion workflows.
+- [x] Add prompt/model canary evaluation.
+- [x] Document deployment, monitoring, license setup, and incident recovery.
 
 ## 15. Immediate next action
 
-Run Phase 9 failure-injection and concurrency tests before preparing a
-deployment.
+Evaluate the completed local prototype against real Ollama, avatar, voice, and
+PostgreSQL workloads before deciding on a production deployment.
 
 ## 16. Sibling model projects
 

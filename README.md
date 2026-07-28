@@ -61,6 +61,14 @@ depth are hard-limited. Ordinary messages keep the faster single-agent path.
 See [docs/phase8-evaluation.md](./docs/phase8-evaluation.md) for the baseline,
 limits, comparison method, and current decision not to add more specialists.
 
+## Operations
+
+Production safeguards include WebSocket capacity and queue limits, frame-size
+limits, Realtime credential rate limiting, model canaries, and an owner-data
+deletion command. Deployment, monitoring, PostgreSQL backup/restore, license
+gates, and incident recovery are documented in
+[docs/operations.md](./docs/operations.md).
+
 ## Requirements
 
 - Node.js 22 or newer.

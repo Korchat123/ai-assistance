@@ -107,6 +107,7 @@ export interface Persistence {
   ): Promise<MemoryItem | undefined>;
   listMemories(clientId: string, now: string): Promise<MemoryItem[]>;
   deleteMemory(clientId: string, memoryId: string): Promise<boolean>;
+  deleteClientData(clientId: string): Promise<void>;
   close(): Promise<void>;
 }
 
@@ -297,6 +298,48 @@ export class MemoryPersistence implements Persistence {
     return Promise.resolve(this.memories.delete(memoryId));
   }
 
+  public deleteClientData(clientId: string): Promise<void> {
+    const conversationIds = new Set(
+      [...this.sessions.values()]
+        .filter((session) => session.clientId === clientId)
+        .map((session) => session.conversationId),
+    );
+    for (const [sessionId, session] of this.sessions) {
+      if (session.clientId === clientId) {
+        this.sessions.delete(sessionId);
+      }
+    }
+    for (const [candidateId, candidate] of this.memoryCandidates) {
+      if (candidate.clientId === clientId) {
+        this.memoryCandidates.delete(candidateId);
+      }
+    }
+    for (const [memoryId, memory] of this.memories) {
+      if (memory.clientId === clientId) {
+        this.memories.delete(memoryId);
+      }
+    }
+    for (const conversationId of conversationIds) {
+      this.summaries.delete(conversationId);
+    }
+    for (const [toolCallId, call] of this.toolCalls) {
+      if (conversationIds.has(call.conversationId)) {
+        this.toolCalls.delete(toolCallId);
+      }
+    }
+    for (const [approvalId, approval] of this.approvals) {
+      if (conversationIds.has(approval.conversationId)) {
+        this.approvals.delete(approvalId);
+      }
+    }
+    for (const [artifactId, artifact] of this.artifacts) {
+      if (conversationIds.has(artifact.conversationId)) {
+        this.artifacts.delete(artifactId);
+      }
+    }
+    return Promise.resolve();
+  }
+
   public close(): Promise<void> {
     return Promise.resolve();
   }
@@ -317,6 +360,11 @@ export class PostgresPersistence implements Persistence {
     const client = await this.pool.connect();
     try {
       await client.query("BEGIN");
+      await client.query(
+        `CREATE TEMP TABLE deletion_conversations ON COMMIT DROP AS
+         SELECT conversation_id FROM sessions WHERE client_id = $1`,
+        [clientId],
+      );
       await client.query(
         `INSERT INTO conversations (conversation_id)
          VALUES ($1)
@@ -708,6 +756,51 @@ export class PostgresPersistence implements Persistence {
       [memoryId, clientId],
     );
     return (result.rowCount ?? 0) > 0;
+  }
+
+  public async deleteClientData(clientId: string): Promise<void> {
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      await client.query(
+        "DELETE FROM memory_items WHERE client_id = $1",
+        [clientId],
+      );
+      await client.query(
+        "DELETE FROM memory_candidates WHERE client_id = $1",
+        [clientId],
+      );
+      for (const table of [
+        "approvals",
+        "tool_calls",
+        "artifacts",
+        "messages",
+        "conversation_summaries",
+        "run_events",
+      ]) {
+        await client.query(
+          `DELETE FROM ${table}
+           WHERE conversation_id IN (
+             SELECT conversation_id FROM deletion_conversations
+           )`,
+        );
+      }
+      await client.query("DELETE FROM sessions WHERE client_id = $1", [
+        clientId,
+      ]);
+      await client.query(
+        `DELETE FROM conversations
+         WHERE conversation_id IN (
+           SELECT conversation_id FROM deletion_conversations
+         )`,
+      );
+      await client.query("COMMIT");
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
   }
 
   public async close(): Promise<void> {

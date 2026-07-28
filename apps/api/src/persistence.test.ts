@@ -78,6 +78,28 @@ describe("long-term memory isolation", () => {
     ).resolves.toBe(true);
   });
 
+  it("deletes all data owned by one client without deleting another", async () => {
+    const persistence = new MemoryPersistence();
+    await persistence.createSession("ses_a", "con_a", "client_a");
+    await persistence.createSession("ses_b", "con_b", "client_b");
+    await persistence.createMemoryCandidate({
+      candidateId: "candidate_a",
+      clientId: "client_a",
+      conversationId: "con_a",
+      turnId: "turn_a",
+      content: "Delete me.",
+      confidence: 1,
+      sensitivity: "personal",
+      createdAt: "2026-01-01T00:00:00.000Z",
+    });
+
+    await persistence.deleteClientData("client_a");
+
+    await expect(persistence.loadSession("ses_a")).resolves.toBeUndefined();
+    await expect(persistence.loadSession("ses_b")).resolves.toBeDefined();
+    expect(persistence.memoryCandidates.has("candidate_a")).toBe(false);
+  });
+
   it("filters expired memories", async () => {
     const persistence = new MemoryPersistence();
     await persistence.createSession("ses_a", "con_a", "client_a");

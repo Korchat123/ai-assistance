@@ -36,7 +36,9 @@ afterEach(async () => {
   await Promise.all(openApps.splice(0).map(async (app) => app.close()));
 });
 
-async function createSocket(options: { persistence?: Persistence } = {}) {
+async function createSocket(
+  options: Parameters<typeof buildApp>[0] & { persistence?: Persistence } = {},
+) {
   const app = await buildApp(options);
   openApps.push(app);
   await app.listen({ host: "127.0.0.1", port: 0 });
@@ -319,6 +321,63 @@ describe("Realtime HTTP boundary", () => {
     });
 
     expect(response.statusCode).toBe(403);
+  });
+
+  it("rate limits repeated credential requests", async () => {
+    const app = await buildApp({
+      limits: { realtimeRequestsPerMinute: 1 },
+      realtime: { apiKey: "" },
+    });
+    openApps.push(app);
+
+    expect(
+      (await app.inject({ method: "POST", url: "/realtime/client-secret" }))
+        .statusCode,
+    ).toBe(503);
+    const limited = await app.inject({
+      method: "POST",
+      url: "/realtime/client-secret",
+    });
+    expect(limited.statusCode).toBe(429);
+    expect(limited.headers["retry-after"]).toBeDefined();
+  });
+});
+
+describe("concurrent session limits", () => {
+  it("isolates concurrent sessions and rejects excess connections", async () => {
+    const app = await buildApp({ limits: { maxWsConnections: 2 } });
+    openApps.push(app);
+    await app.listen({ host: "127.0.0.1", port: 0 });
+    const address = app.server.address() as AddressInfo;
+    const url = `ws://127.0.0.1:${address.port}/ws`;
+    const first = new WebSocket(url);
+    const second = new WebSocket(url);
+    await Promise.all(
+      [first, second].map(
+        (socket) =>
+          new Promise<void>((resolve, reject) => {
+            socket.once("open", resolve);
+            socket.once("error", reject);
+          }),
+      ),
+    );
+    const third = new WebSocket(url);
+    const close = new Promise<{ code: number; reason: string }>((resolve) => {
+      third.once("close", (code, reason) =>
+        resolve({ code, reason: reason.toString() }),
+      );
+    });
+
+    await new Promise<void>((resolve, reject) => {
+      third.once("open", resolve);
+      third.once("error", reject);
+    });
+    await expect(close).resolves.toEqual({
+      code: 1013,
+      reason: "Connection capacity reached",
+    });
+    first.close();
+    second.close();
   });
 });
 
