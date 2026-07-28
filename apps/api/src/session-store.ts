@@ -9,6 +9,8 @@ import { ConversationManager } from "./conversation-manager.js";
 import {
   MemoryPersistence,
   type HydratedSession,
+  type MemoryCandidate,
+  type MemoryItem,
   type PersistedApproval,
   type PersistedToolCall,
   type Persistence,
@@ -47,12 +49,14 @@ export class SessionState {
   public readonly conversation: ConversationManager;
   private nextSequence = 0;
   private persistenceQueue: Promise<void> = Promise.resolve();
+  private readonly summaryMessages: ConversationMessage[] = [];
 
   public constructor(
     public readonly sessionId: string,
     public readonly conversationId: string,
     public readonly persistence: Persistence = new MemoryPersistence(),
     hydrated?: HydratedSession,
+    public readonly clientId = hydrated?.clientId ?? sessionId,
   ) {
     this.conversation = new ConversationManager(
       createConfiguredProvider(),
@@ -61,7 +65,7 @@ export class SessionState {
     );
     if (hydrated === undefined) {
       this.enqueuePersistence(() =>
-        this.persistence.createSession(sessionId, conversationId),
+        this.persistence.createSession(sessionId, conversationId, clientId),
       );
     } else {
       this.replay.push(...hydrated.events);
@@ -69,6 +73,7 @@ export class SessionState {
       this.nextSequence =
         (hydrated.events.at(-1)?.sequence ?? -1) + 1;
     }
+    this.summaryMessages.push(...(hydrated?.messages ?? []));
   }
 
   public emit(input: ServerEventInput): ServerEvent {
@@ -123,9 +128,52 @@ export class SessionState {
     turnId: string,
     message: ConversationMessage,
   ): void {
+    this.summaryMessages.push(message);
     this.enqueuePersistence(() =>
       this.persistence.recordMessage(this.conversationId, turnId, message),
     );
+    if (message.role === "assistant") {
+      const summary = deriveSummary(this.summaryMessages);
+      this.enqueuePersistence(() =>
+        this.persistence.saveConversationSummary(
+          this.conversationId,
+          summary,
+          this.summaryMessages.length,
+        ),
+      );
+    }
+  }
+
+  public async createMemoryCandidate(
+    candidate: MemoryCandidate,
+  ): Promise<void> {
+    await this.flushPersistence();
+    await this.persistence.createMemoryCandidate(candidate);
+  }
+
+  public async resolveMemoryCandidate(
+    candidateId: string,
+    decision: "approved" | "denied",
+  ): Promise<MemoryItem | undefined> {
+    await this.flushPersistence();
+    return this.persistence.resolveMemoryCandidate(
+      this.clientId,
+      candidateId,
+      decision,
+    );
+  }
+
+  public async listMemories(): Promise<MemoryItem[]> {
+    await this.flushPersistence();
+    return this.persistence.listMemories(
+      this.clientId,
+      new Date().toISOString(),
+    );
+  }
+
+  public async deleteMemory(memoryId: string): Promise<boolean> {
+    await this.flushPersistence();
+    return this.persistence.deleteMemory(this.clientId, memoryId);
   }
 
   public recordApproval(approval: PersistedApproval): void {
@@ -170,7 +218,11 @@ export class SessionStore {
     return this.sessions.get(sessionId);
   }
 
-  public create(sessionId: string, conversationId: string): SessionState {
+  public create(
+    sessionId: string,
+    conversationId: string,
+    clientId = sessionId,
+  ): SessionState {
     const existing = this.sessions.get(sessionId);
     if (existing !== undefined) {
       return existing;
@@ -180,6 +232,8 @@ export class SessionStore {
       sessionId,
       conversationId,
       this.persistence,
+      undefined,
+      clientId,
     );
     this.sessions.set(sessionId, session);
     return session;
@@ -215,4 +269,12 @@ export class SessionStore {
     this.sessions.clear();
     await this.persistence.close();
   }
+}
+
+function deriveSummary(messages: readonly ConversationMessage[]): string {
+  return messages
+    .slice(-12)
+    .map((message) => `${message.role}: ${message.text}`)
+    .join("\n")
+    .slice(0, 4_000);
 }

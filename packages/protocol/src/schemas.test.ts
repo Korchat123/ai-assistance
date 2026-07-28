@@ -155,4 +155,35 @@ describe("protocol event schemas", () => {
       }).success,
     ).toBe(true);
   });
+
+  it("validates memory approval and provenance events", () => {
+    expect(
+      ClientEventSchema.safeParse({
+        ...base,
+        type: "memory.resolve",
+        payload: {
+          commandId: "cmd_memory",
+          candidateId: "candidate_1",
+          decision: "approved",
+        },
+      }).success,
+    ).toBe(true);
+    expect(
+      ServerEventSchema.safeParse({
+        ...base,
+        type: "memory.candidate",
+        turnId: "turn_1",
+        payload: {
+          candidateId: "candidate_1",
+          content: "Prefers short answers.",
+          confidence: 1,
+          sensitivity: "personal",
+          provenance: {
+            conversationId: "con_1",
+            turnId: "turn_1",
+          },
+        },
+      }).success,
+    ).toBe(true);
+  });
 });

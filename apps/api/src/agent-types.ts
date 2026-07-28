@@ -27,10 +27,15 @@ export interface ConversationMessage {
   text: string;
 }
 
+export interface AgentContext {
+  memories: readonly string[];
+}
+
 export interface AgentProvider {
   readonly name: string;
   createTurn(
     messages: readonly ConversationMessage[],
     signal: AbortSignal,
+    context?: AgentContext,
   ): Promise<AssistantTurn>;
 }

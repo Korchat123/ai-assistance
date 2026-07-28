@@ -483,10 +483,10 @@ Exit criteria:
 
 ### Phase 7 — Memory
 
-- [ ] Implement session summaries.
-- [ ] Add user-approved long-term memory candidates.
-- [ ] Add provenance, confidence, TTL, sensitivity, and deletion.
-- [ ] Test user and conversation isolation.
+- [x] Implement session summaries.
+- [x] Add user-approved long-term memory candidates.
+- [x] Add provenance, confidence, TTL, sensitivity, and deletion.
+- [x] Test user and conversation isolation.
 
 ### Phase 8 — Bounded sub-agents
 
@@ -505,6 +505,24 @@ Exit criteria:
 
 ## 15. Immediate next action
 
-Begin Phase 1 with no proprietary Live2D assets and no production API keys.
-The first deliverable is a tested protocol package plus minimal web/API package
-boundaries that compile against it.
+Evaluate Phase 7 memory behavior and establish the single-agent baseline needed
+before beginning Phase 8 bounded sub-agent work.
+
+## 16. Sibling model projects
+
+Further avatar and custom-voice integration is coordinated with two independent
+repositories under `C:\Users\korch\personal-program`:
+
+- `live2d-model` will produce an open 2D avatar bundle without Cubism. It will
+  not claim compatibility with proprietary Live2D model formats.
+- `voice-model` will produce a consented local TTS model and cancellable
+  synthesis service for assistant speech.
+
+This repository consumes their versioned outputs through avatar and voice
+provider interfaces. It does not own their source artwork, recording datasets,
+training checkpoints, or authoring pipelines.
+
+Implementation plans are maintained in
+[docs/sibling-projects](./docs/sibling-projects/README.md). Stabilize the avatar
+manifest and voice synthesis contracts before adding their production adapters
+to this application.

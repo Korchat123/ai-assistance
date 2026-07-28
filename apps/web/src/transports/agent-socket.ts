@@ -35,6 +35,21 @@ type PendingTextCommand = {
 
 const HEARTBEAT_MS = 15_000;
 const STALE_CONNECTION_MS = 45_000;
+const CLIENT_ID_STORAGE_KEY = "live2d-agent.client-id";
+
+function getStableClientId(): string {
+  try {
+    const existing = window.localStorage.getItem(CLIENT_ID_STORAGE_KEY);
+    if (existing !== null && existing.length > 0) {
+      return existing;
+    }
+    const created = crypto.randomUUID();
+    window.localStorage.setItem(CLIENT_ID_STORAGE_KEY, created);
+    return created;
+  } catch {
+    return crypto.randomUUID();
+  }
+}
 
 export class AgentSocket extends EventTarget {
   private socket: WebSocket | undefined;
@@ -48,7 +63,7 @@ export class AgentSocket extends EventTarget {
   private ready = false;
   private intentionallyClosed = false;
   private readonly pendingText = new Map<string, PendingTextCommand>();
-  private readonly clientId = crypto.randomUUID();
+  private readonly clientId = getStableClientId();
   private readonly sessionId = crypto.randomUUID();
   private readonly conversationId = crypto.randomUUID();
 
@@ -143,6 +158,20 @@ export class AgentSocket extends EventTarget {
       payload: {
         commandId: crypto.randomUUID(),
         approvalId,
+        decision,
+      },
+    });
+  }
+
+  public resolveMemory(
+    candidateId: string,
+    decision: "approved" | "denied",
+  ): void {
+    this.sendWhenReady({
+      type: "memory.resolve",
+      payload: {
+        commandId: crypto.randomUUID(),
+        candidateId,
         decision,
       },
     });

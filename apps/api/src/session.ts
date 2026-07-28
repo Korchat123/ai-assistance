@@ -75,7 +75,7 @@ export function attachSession(socket: WebSocket, store: SessionStore): void {
         return;
       }
 
-      handleEvent(session, event);
+      await handleEvent(session, event);
     });
     void messageQueue.catch((error: unknown) => {
       console.error("Session message processing failed.", error);
@@ -103,7 +103,11 @@ async function initializeSession(
   event: ClientEvent,
 ): Promise<SessionState | undefined> {
   if (event.type === "session.start") {
-    const session = store.create(event.sessionId, event.conversationId);
+    const session = store.create(
+      event.sessionId,
+      event.conversationId,
+      event.payload.clientId,
+    );
     session.sockets.add(socket);
     session.emit({
       type: "session.ready",
@@ -157,7 +161,10 @@ async function initializeSession(
   return undefined;
 }
 
-function handleEvent(session: SessionState, event: ClientEvent): void {
+async function handleEvent(
+  session: SessionState,
+  event: ClientEvent,
+): Promise<void> {
   switch (event.type) {
     case "session.start":
     case "session.resume":
@@ -184,15 +191,19 @@ function handleEvent(session: SessionState, event: ClientEvent): void {
       resolveApproval(session, event);
       return;
 
+    case "memory.resolve":
+      await resolveMemory(session, event);
+      return;
+
     case "user.text":
-      startTextTurn(session, event);
+      await startTextTurn(session, event);
   }
 }
 
-function startTextTurn(
+async function startTextTurn(
   session: SessionState,
   event: Extract<ClientEvent, { type: "user.text" }>,
-): void {
+): Promise<void> {
   const turnId = event.turnId ?? crypto.randomUUID();
   const fingerprint = JSON.stringify({
     turnId,
@@ -230,7 +241,57 @@ function startTextTurn(
 
   session.commands.set(event.payload.commandId, { fingerprint, turnId });
   session.recordMessage(turnId, { role: "user", text: event.payload.text });
-  void runTextTurn(session, turnId, event.payload.commandId, event.payload.text);
+  const memoryCommand = parseMemoryCommand(event.payload.text);
+  if (memoryCommand?.type === "remember") {
+    emitLocalTurnStarted(session, turnId, event.payload.commandId);
+    await proposeMemory(session, turnId, event.payload.commandId, memoryCommand.content);
+    return;
+  }
+  if (memoryCommand?.type === "list") {
+    emitLocalTurnStarted(session, turnId, event.payload.commandId);
+    const memories = await session.listMemories();
+    session.emit({
+      type: "memory.list",
+      turnId,
+      payload: { items: memories.map(toProtocolMemory) },
+    });
+    emitLocalResponse(
+      session,
+      turnId,
+      event.payload.commandId,
+      memories.length === 0
+        ? "You have no saved memories."
+        : `You have ${memories.length} saved ${memories.length === 1 ? "memory" : "memories"}.`,
+    );
+    return;
+  }
+  if (memoryCommand?.type === "forget") {
+    emitLocalTurnStarted(session, turnId, event.payload.commandId);
+    const deleted = await session.deleteMemory(memoryCommand.memoryId);
+    if (deleted) {
+      session.emit({
+        type: "memory.changed",
+        turnId,
+        payload: { action: "deleted", memoryId: memoryCommand.memoryId },
+      });
+    }
+    emitLocalResponse(
+      session,
+      turnId,
+      event.payload.commandId,
+      deleted ? "The memory was deleted." : "That memory was not found.",
+    );
+    return;
+  }
+
+  const memories = await session.listMemories();
+  void runTextTurn(
+    session,
+    turnId,
+    event.payload.commandId,
+    event.payload.text,
+    memories.map((memory) => memory.content),
+  );
 }
 
 async function runTextTurn(
@@ -238,6 +299,7 @@ async function runTextTurn(
   turnId: string,
   commandId: string,
   userText: string,
+  memories: readonly string[],
 ): Promise<void> {
   const controller = new AbortController();
   session.activeTurn = { turnId, commandId, controller };
@@ -257,6 +319,7 @@ async function runTextTurn(
       userText,
       controller.signal,
       (event) => emitConversationEvent(session, turnId, event),
+      { memories },
     );
     if (result.status === "waiting_approval") {
       return;
@@ -284,6 +347,148 @@ async function runTextTurn(
       session.activeTurn = undefined;
     }
   }
+}
+
+async function proposeMemory(
+  session: SessionState,
+  turnId: string,
+  commandId: string,
+  content: string,
+): Promise<void> {
+  if (containsSecretLikeContent(content)) {
+    emitLocalResponse(
+      session,
+      turnId,
+      commandId,
+      "That looks sensitive, so I will not save it as memory.",
+    );
+    return;
+  }
+  const candidateId = crypto.randomUUID();
+  const expiresAt = new Date(
+    Date.now() + 365 * 24 * 60 * 60 * 1_000,
+  ).toISOString();
+  await session.createMemoryCandidate({
+    candidateId,
+    clientId: session.clientId,
+    conversationId: session.conversationId,
+    turnId,
+    content,
+    confidence: 1,
+    sensitivity: "personal",
+    createdAt: new Date().toISOString(),
+    expiresAt,
+  });
+  session.emit({
+    type: "memory.candidate",
+    turnId,
+    payload: {
+      candidateId,
+      content,
+      confidence: 1,
+      sensitivity: "personal",
+      expiresAt,
+      provenance: {
+        conversationId: session.conversationId,
+        turnId,
+      },
+    },
+  });
+  emitLocalResponse(
+    session,
+    turnId,
+    commandId,
+    "Please approve or deny this memory candidate.",
+  );
+}
+
+async function resolveMemory(
+  session: SessionState,
+  event: Extract<ClientEvent, { type: "memory.resolve" }>,
+): Promise<void> {
+  const memory = await session.resolveMemoryCandidate(
+    event.payload.candidateId,
+    event.payload.decision,
+  );
+  session.emit({
+    type: "memory.changed",
+    payload: {
+      action:
+        event.payload.decision === "approved" && memory !== undefined
+          ? "created"
+          : "denied",
+      candidateId: event.payload.candidateId,
+      ...(memory === undefined ? {} : { memoryId: memory.memoryId }),
+    },
+  });
+  session.emit({
+    type: "memory.list",
+    payload: {
+      items: (await session.listMemories()).map(toProtocolMemory),
+    },
+  });
+}
+
+function emitLocalTurnStarted(
+  session: SessionState,
+  turnId: string,
+  commandId: string,
+): void {
+  session.emit({ type: "turn.started", turnId, payload: { commandId } });
+}
+
+function emitLocalResponse(
+  session: SessionState,
+  turnId: string,
+  commandId: string,
+  text: string,
+): void {
+  session.recordMessage(turnId, { role: "assistant", text });
+  session.emit({
+    type: "assistant.text.completed",
+    turnId,
+    payload: { text },
+  });
+  completeTurn(session, turnId, "completed");
+}
+
+function parseMemoryCommand(
+  text: string,
+):
+  | { type: "remember"; content: string }
+  | { type: "list" }
+  | { type: "forget"; memoryId: string }
+  | undefined {
+  const trimmed = text.trim();
+  if (trimmed === "/memories") {
+    return { type: "list" };
+  }
+  if (trimmed.startsWith("/remember ")) {
+    const content = trimmed.slice("/remember ".length).trim();
+    return content === "" ? undefined : { type: "remember", content };
+  }
+  if (trimmed.startsWith("/forget ")) {
+    const memoryId = trimmed.slice("/forget ".length).trim();
+    return memoryId === "" ? undefined : { type: "forget", memoryId };
+  }
+  return undefined;
+}
+
+function containsSecretLikeContent(content: string): boolean {
+  return /\b(password|passcode|api[_ -]?key|access[_ -]?token|secret)\b/i.test(
+    content,
+  );
+}
+
+function toProtocolMemory(memory: Awaited<ReturnType<SessionState["listMemories"]>>[number]) {
+  return {
+    memoryId: memory.memoryId,
+    content: memory.content,
+    confidence: memory.confidence,
+    sensitivity: memory.sensitivity,
+    createdAt: memory.createdAt,
+    ...(memory.expiresAt === undefined ? {} : { expiresAt: memory.expiresAt }),
+  };
 }
 
 function resolveApproval(

@@ -1,4 +1,9 @@
-import type { AssistantTurn, AgentProvider, ConversationMessage } from "./agent-types.js";
+import type {
+  AgentContext,
+  AssistantTurn,
+  AgentProvider,
+  ConversationMessage,
+} from "./agent-types.js";
 import {
   ToolRuntime,
   type ProposedToolCall,
@@ -31,6 +36,7 @@ interface PendingApproval {
   call: ProposedToolCall;
   signal: AbortSignal;
   emit: (event: ConversationEvent) => void;
+  context: AgentContext;
 }
 
 export class ConversationManager {
@@ -49,6 +55,7 @@ export class ConversationManager {
     userText: string,
     signal: AbortSignal,
     emit: (event: ConversationEvent) => void,
+    context: AgentContext = { memories: [] },
   ): Promise<TurnHandle> {
     this.history.push({ role: "user", text: userText });
     const invocation = parseExampleTool(userText);
@@ -57,14 +64,20 @@ export class ConversationManager {
       if (call.riskLevel === 1) {
         const approvalId = crypto.randomUUID();
         this.tools.markAwaitingApproval(call);
-        this.pending.set(approvalId, { approvalId, call, signal, emit });
+        this.pending.set(approvalId, {
+          approvalId,
+          call,
+          signal,
+          emit,
+          context,
+        });
         emit({ type: "approval.required", approvalId, call });
         return { status: "waiting_approval", approvalId };
       }
       await this.executeTool(call, signal, emit);
     }
 
-    await this.completeAssistantTurn(signal, emit);
+    await this.completeAssistantTurn(signal, emit, context);
     return { status: "completed" };
   }
 
@@ -81,7 +94,11 @@ export class ConversationManager {
       return "denied";
     }
     await this.executeTool(pending.call, pending.signal, pending.emit);
-    await this.completeAssistantTurn(pending.signal, pending.emit);
+    await this.completeAssistantTurn(
+      pending.signal,
+      pending.emit,
+      pending.context,
+    );
     return "completed";
   }
 
@@ -114,8 +131,9 @@ export class ConversationManager {
   private async completeAssistantTurn(
     signal: AbortSignal,
     emit: (event: ConversationEvent) => void,
+    context: AgentContext,
   ): Promise<void> {
-    const turn = await this.provider.createTurn(this.history, signal);
+    const turn = await this.provider.createTurn(this.history, signal, context);
     for (const delta of turn.displayText.match(/\S+\s*/g) ?? [turn.displayText]) {
       signal.throwIfAborted();
       emit({ type: "text.delta", delta });

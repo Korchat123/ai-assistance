@@ -87,6 +87,17 @@ export const ApprovalResolveEventSchema = event(
     .strict(),
 );
 
+export const MemoryResolveEventSchema = event(
+  "memory.resolve",
+  z
+    .object({
+      commandId: id,
+      candidateId: id,
+      decision: z.enum(["approved", "denied"]),
+    })
+    .strict(),
+);
+
 export const ClientAckEventSchema = event(
   "client.ack",
   z
@@ -196,6 +207,52 @@ export const ApprovalRequiredEventSchema = event(
     .strict(),
 );
 
+const memoryItem = z
+  .object({
+    memoryId: id,
+    content: z.string().min(1).max(PROTOCOL_LIMITS.textLength),
+    confidence: z.number().min(0).max(1),
+    sensitivity: z.enum(["low", "personal", "sensitive"]),
+    createdAt: timestamp,
+    expiresAt: timestamp.optional(),
+  })
+  .strict();
+
+export const MemoryCandidateEventSchema = event(
+  "memory.candidate",
+  z
+    .object({
+      candidateId: id,
+      content: z.string().min(1).max(PROTOCOL_LIMITS.textLength),
+      confidence: z.number().min(0).max(1),
+      sensitivity: z.enum(["low", "personal", "sensitive"]),
+      expiresAt: timestamp.optional(),
+      provenance: z
+        .object({
+          conversationId: id,
+          turnId: id,
+        })
+        .strict(),
+    })
+    .strict(),
+);
+
+export const MemoryListEventSchema = event(
+  "memory.list",
+  z.object({ items: z.array(memoryItem).max(100) }).strict(),
+);
+
+export const MemoryChangedEventSchema = event(
+  "memory.changed",
+  z
+    .object({
+      action: z.enum(["created", "deleted", "denied"]),
+      memoryId: id.optional(),
+      candidateId: id.optional(),
+    })
+    .strict(),
+);
+
 export const AvatarCueEventSchema = event(
   "avatar.cue",
   z
@@ -257,6 +314,7 @@ export const ClientEventSchema = z.discriminatedUnion("type", [
   UserTextEventSchema,
   TaskCancelEventSchema,
   ApprovalResolveEventSchema,
+  MemoryResolveEventSchema,
   ClientAckEventSchema,
   ClientPingEventSchema,
 ]);
@@ -271,6 +329,9 @@ export const ServerEventSchema = z.discriminatedUnion("type", [
   ToolCompletedEventSchema,
   ToolFailedEventSchema,
   ApprovalRequiredEventSchema,
+  MemoryCandidateEventSchema,
+  MemoryListEventSchema,
+  MemoryChangedEventSchema,
   AvatarCueEventSchema,
   TurnCompletedEventSchema,
   ServerErrorEventSchema,

@@ -56,10 +56,38 @@ describe("SessionState", () => {
         { role: "assistant", text: "Remembered." },
       ],
     });
+    expect(persistence.summaries.get("con_durable")).toMatchObject({
+      sourceMessageCount: 2,
+    });
     const next = restored?.emit({
       type: "server.pong",
       payload: { nonce: "next_nonce" },
     });
     expect(next?.sequence).toBe(2);
+  });
+
+  it("keeps summaries isolated by conversation", async () => {
+    const persistence = new MemoryPersistence();
+    const store = new SessionStore(persistence);
+    const first = store.create("ses_first", "con_first", "client_shared");
+    const second = store.create("ses_second", "con_second", "client_shared");
+    first.recordMessage("turn_first", { role: "user", text: "First topic" });
+    first.recordMessage("turn_first", { role: "assistant", text: "First reply" });
+    second.recordMessage("turn_second", { role: "user", text: "Second topic" });
+    second.recordMessage("turn_second", {
+      role: "assistant",
+      text: "Second reply",
+    });
+    await Promise.all([first.flushPersistence(), second.flushPersistence()]);
+
+    expect(persistence.summaries.get("con_first")?.summary).toContain(
+      "First topic",
+    );
+    expect(persistence.summaries.get("con_first")?.summary).not.toContain(
+      "Second topic",
+    );
+    expect(persistence.summaries.get("con_second")?.summary).toContain(
+      "Second topic",
+    );
   });
 });

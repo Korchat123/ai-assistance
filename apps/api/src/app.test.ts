@@ -372,3 +372,103 @@ describe("durable audit projection", () => {
     socket.close();
   });
 });
+
+describe("Phase 7 memory flow", () => {
+  it("requires approval before exposing a long-term memory", async () => {
+    const persistence = new MemoryPersistence();
+    const { socket } = await createSocket({ persistence });
+    const send = sender(socket, "ses_memory", "con_memory");
+    const candidatePromise = collectUntil(
+      socket,
+      (event) => event.type === "memory.candidate",
+    );
+    send({ type: "session.start", payload: { clientId: "client_memory" } });
+    send({
+      type: "user.text",
+      turnId: "turn_memory",
+      payload: {
+        commandId: "cmd_memory",
+        text: "/remember I prefer concise answers",
+      },
+    });
+
+    const candidateEvents = await candidatePromise;
+    const candidate = candidateEvents.find(
+      (event) => event.type === "memory.candidate",
+    );
+    if (candidate?.type !== "memory.candidate") {
+      throw new Error("Expected a memory candidate.");
+    }
+    expect(
+      await persistence.listMemories(
+        "client_memory",
+        new Date().toISOString(),
+      ),
+    ).toEqual([]);
+
+    const listPromise = collectUntil(
+      socket,
+      (event) => event.type === "memory.list",
+    );
+    send({
+      type: "memory.resolve",
+      payload: {
+        commandId: "cmd_resolve_memory",
+        candidateId: candidate.payload.candidateId,
+        decision: "approved",
+      },
+    });
+    const resolvedEvents = await listPromise;
+    const list = resolvedEvents.find((event) => event.type === "memory.list");
+    expect(list?.type === "memory.list" ? list.payload.items : []).toHaveLength(
+      1,
+    );
+    expect(
+      list?.type === "memory.list"
+        ? list.payload.items[0]?.content
+        : undefined,
+    ).toBe("I prefer concise answers");
+    socket.close();
+  });
+
+  it("does not allow another client to approve a candidate", async () => {
+    const persistence = new MemoryPersistence();
+    await persistence.createSession("ses_owner", "con_owner", "client_owner");
+    await persistence.createMemoryCandidate({
+      candidateId: "candidate_owner",
+      clientId: "client_owner",
+      conversationId: "con_owner",
+      turnId: "turn_owner",
+      content: "Owner-only memory.",
+      confidence: 1,
+      sensitivity: "personal",
+      createdAt: new Date().toISOString(),
+    });
+    const { socket } = await createSocket({ persistence });
+    const send = sender(socket, "ses_other", "con_other");
+    const changedPromise = collectUntil(
+      socket,
+      (event) => event.type === "memory.changed",
+    );
+    send({ type: "session.start", payload: { clientId: "client_other" } });
+    send({
+      type: "memory.resolve",
+      payload: {
+        commandId: "cmd_cross_owner",
+        candidateId: "candidate_owner",
+        decision: "approved",
+      },
+    });
+
+    const events = await changedPromise;
+    const changed = events.find((event) => event.type === "memory.changed");
+    expect(
+      changed?.type === "memory.changed"
+        ? changed.payload.action
+        : undefined,
+    ).toBe("denied");
+    expect(persistence.memoryCandidates.has("candidate_owner")).toBe(true);
+    expect(persistence.memories.size).toBe(0);
+    socket.close();
+  });
+});

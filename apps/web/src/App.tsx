@@ -27,6 +27,11 @@ type Message = {
 };
 
 type Approval = Extract<ServerEvent, { type: "approval.required" }>;
+type MemoryCandidate = Extract<ServerEvent, { type: "memory.candidate" }>;
+type MemoryItem = Extract<
+  ServerEvent,
+  { type: "memory.list" }
+>["payload"]["items"][number];
 type VoiceState = LocalVoiceState | RealtimeVoiceState;
 
 export function App() {
@@ -41,6 +46,8 @@ export function App() {
   const [input, setInput] = useState("");
   const [error, setError] = useState<string>();
   const [approvals, setApprovals] = useState<Approval[]>([]);
+  const [memoryCandidates, setMemoryCandidates] = useState<MemoryCandidate[]>([]);
+  const [memories, setMemories] = useState<MemoryItem[]>([]);
   const [voiceState, setVoiceState] = useState<VoiceState>("idle");
   const [voiceEnabled, setVoiceEnabled] = useState(true);
   const voiceRef = useRef<LocalVoiceController | undefined>(undefined);
@@ -232,6 +239,39 @@ export function App() {
           : [...current, event],
       );
     }
+    if (event.type === "memory.candidate") {
+      setMemoryCandidates((current) =>
+        current.some(
+          (candidate) =>
+            candidate.payload.candidateId === event.payload.candidateId,
+        )
+          ? current
+          : [...current, event],
+      );
+    }
+    if (event.type === "memory.list") {
+      setMemories([...event.payload.items]);
+    }
+    if (event.type === "memory.changed") {
+      if (event.payload.candidateId !== undefined) {
+        setMemoryCandidates((current) =>
+          current.filter(
+            (candidate) =>
+              candidate.payload.candidateId !== event.payload.candidateId,
+          ),
+        );
+      }
+      if (
+        event.payload.action === "deleted" &&
+        event.payload.memoryId !== undefined
+      ) {
+        setMemories((current) =>
+          current.filter(
+            (memory) => memory.memoryId !== event.payload.memoryId,
+          ),
+        );
+      }
+    }
   }
 
   function submit(event: FormEvent<HTMLFormElement>): void {
@@ -296,6 +336,57 @@ export function App() {
             </button>
           </section>
         ))}
+
+        {memoryCandidates.map((candidate) => (
+          <section className="approval memory-card" key={candidate.payload.candidateId}>
+            <p>Save this memory?</p>
+            <strong>{candidate.payload.content}</strong>
+            <small>
+              {candidate.payload.sensitivity} · expires{" "}
+              {candidate.payload.expiresAt === undefined
+                ? "never"
+                : new Date(candidate.payload.expiresAt).toLocaleDateString()}
+            </small>
+            <div>
+              <button
+                onClick={() =>
+                  socket.resolveMemory(candidate.payload.candidateId, "approved")
+                }
+                type="button"
+              >
+                Save memory
+              </button>
+              <button
+                className="secondary"
+                onClick={() =>
+                  socket.resolveMemory(candidate.payload.candidateId, "denied")
+                }
+                type="button"
+              >
+                Deny
+              </button>
+            </div>
+          </section>
+        ))}
+
+        {memories.length > 0 ? (
+          <details className="memory-list">
+            <summary>Saved memories ({memories.length})</summary>
+            {memories.map((memory) => (
+              <article key={memory.memoryId}>
+                <p>{memory.content}</p>
+                <small>{memory.sensitivity}</small>
+                <button
+                  className="secondary"
+                  onClick={() => sendMessage(`/forget ${memory.memoryId}`)}
+                  type="button"
+                >
+                  Delete
+                </button>
+              </article>
+            ))}
+          </details>
+        ) : null}
 
         <section className="composer">
           <div className="voice-controls">

@@ -17,6 +17,8 @@ The current milestone is an agent-and-tools vertical slice. It includes:
 - Protocol 1.0 runtime validation with Zod.
 - Ordered server events, cumulative acknowledgements, bounded replay, command
   deduplication, cancellation, heartbeat enforcement, and reconnect/resume.
+- Conversation summaries and explicit, user-approved long-term memory with
+  provenance, expiry, sensitivity, and deletion.
 
 The Live2D renderer and optional OpenAI Realtime voice transport are available.
 Neither requires proprietary assets or API credentials for the default local
@@ -28,9 +30,25 @@ The API uses local Ollama by default, with no model API charge. Copy
 you intentionally want the separately billed OpenAI API.
 
 Persistence is also local and in-memory by default. To preserve replay,
-tool-call audits, approvals, and artifact references across API restarts, set
-`DATABASE_URL` and run `corepack pnpm migrate`. See
+tool-call audits, approvals, artifact references, conversation summaries, and
+approved long-term memories across API restarts, set `DATABASE_URL` and run
+`corepack pnpm migrate`. See
 [docs/persistence.md](./docs/persistence.md).
+
+## Memory
+
+Phase 7 uses explicit commands so the assistant never silently promotes model
+guesses into long-term memory:
+
+- `/remember I prefer concise answers` creates a candidate. Select **Save
+  memory** or **Deny** in the browser.
+- `/memories` lists the active memories for this browser identity.
+- `/forget <memory-id>` deletes an approved memory.
+
+Approved memories include source conversation/turn provenance, confidence,
+sensitivity, and a one-year default expiry. Obvious password, token, API-key,
+passcode, and secret content is rejected. The browser identity is persisted in
+local storage; it provides local prototype isolation, not authentication.
 
 ## Requirements
 

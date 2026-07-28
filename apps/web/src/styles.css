@@ -145,6 +145,66 @@ h1 {
   background: #3b1822;
 }
 
+.approval,
+.memory-list {
+  padding: 0.85rem;
+  border: 1px solid #59466f;
+  border-radius: 14px;
+  background: #211a2c;
+}
+
+.approval {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+}
+
+.approval p {
+  flex: 1;
+}
+
+.approval button,
+.memory-list button {
+  padding: 0.55rem 0.8rem;
+}
+
+.memory-card {
+  align-items: flex-start;
+  flex-direction: column;
+}
+
+.memory-card strong {
+  line-height: 1.4;
+}
+
+.memory-card small,
+.memory-list small {
+  color: #b6a9c4;
+}
+
+.memory-card div {
+  display: flex;
+  gap: 0.55rem;
+}
+
+.secondary {
+  border: 1px solid #4b405d;
+  background: #211b2b;
+}
+
+.memory-list summary {
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.memory-list article {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  align-items: center;
+  gap: 0.7rem;
+  padding-top: 0.75rem;
+}
+
 .message {
   max-width: 86%;
   padding: 0.9rem 1rem;
@@ -182,11 +242,6 @@ form {
 .voice-controls button {
   padding: 0.55rem 0.8rem;
   font-size: 0.8rem;
-}
-
-.voice-controls .secondary {
-  border: 1px solid #4b405d;
-  background: #211b2b;
 }
 
 .voice-controls .voice-active {
